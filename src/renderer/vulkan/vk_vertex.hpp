@@ -21,9 +21,14 @@ namespace V {
   };
   
   const std::vector<Vertex> vertices = {
-    {{0.f, -0.5f}, {1.f, 0.f, 0.f}},
-    {{0.5f, 0.5f}, {0.f, 1.f, 0.f}},
-    {{-0.5f, 0.5f}, {0.f, 0.f, 1.f}}
+    {{-0.5f, -0.5f}, {1.f, 0.f, 0.f}},
+    {{0.5f, -0.5f}, {0.f, 1.f, 0.f}},
+    {{0.5f, 0.5f}, {0.f, 0.f, 1.f}},
+    {{-0.5f, 0.5f}, {1.f, 1.f, 1.f}}
+  };
+  
+  const std::vector<uint16_t> indices = {
+    0, 1, 2, 2, 3, 0
   };
   
 }; //V

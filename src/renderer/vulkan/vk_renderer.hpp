@@ -59,6 +59,7 @@ namespace V {
     bool createGraphPipeline();
     bool createCmdPool();
     bool createVBuf();
+    bool createIBuf();
     bool createCmdBufs();
     bool createSyncObjs();
     
@@ -77,6 +78,8 @@ namespace V {
     void recreateSC();
     void cleanupSC();
     std::expected<uint32_t, std::string> findMemType(uint32_t typeFilter, vk::MemoryPropertyFlags props);
+    bool createBuf(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags memProps, vk::raii::Buffer& buf, vk::raii::DeviceMemory& mem);
+    bool copyBuffer(vk::raii::Buffer& srcBuf, vk::raii::Buffer& dstBuf, vk::DeviceSize size);
     
     const std::vector<const char*> m_validLayers = {
       "VK_LAYER_KHRONOS_validation"
@@ -99,6 +102,8 @@ namespace V {
     vk::raii::CommandPool m_cmdPool{nullptr};
     vk::raii::Buffer m_vertBuf{nullptr};
     vk::raii::DeviceMemory m_vertBufMem{nullptr};
+    vk::raii::Buffer m_indBuf{nullptr};
+    vk::raii::DeviceMemory m_indBufMem{nullptr};
     
     std::vector<vk::raii::CommandBuffer> m_cmdBufs;
     std::vector<vk::raii::Semaphore> m_presCompleteSems;

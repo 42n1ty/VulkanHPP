@@ -94,7 +94,8 @@ namespace V {
     m_cmdBufs[m_curFrame].setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), m_sc.getExtent()));
     
     m_cmdBufs[m_curFrame].bindVertexBuffers(0, *m_vertBuf, {0});
-    m_cmdBufs[m_curFrame].draw(3, 1, 0, 0);
+    m_cmdBufs[m_curFrame].bindIndexBuffer(*m_indBuf, 0, vk::IndexType::eUint16);
+    m_cmdBufs[m_curFrame].drawIndexed(indices.size(), 1, 0, 0, 0);
     
     m_cmdBufs[m_curFrame].endRendering();
     
@@ -267,6 +268,76 @@ namespace V {
     
   }
   
+  bool VulkanRenderer::createBuf(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags memProps, vk::raii::Buffer& buf, vk::raii::DeviceMemory& mem) {
+    vk::BufferCreateInfo info{
+      .size = size,
+      .usage = usage,
+      .sharingMode = vk::SharingMode::eExclusive
+    };
+    
+    {
+      auto res = m_logDev.createBuffer(info);
+      if(!res) {
+        Logger::error("Failed to create staging buffer: {}", vk::to_string(res.error()));
+        return false;
+      }
+      buf = std::move(res.value());
+    }
+    
+    vk::MemoryRequirements memReq = buf.getMemoryRequirements();
+    uint32_t typeStaging = 0;
+    {
+      auto res = findMemType(memReq.memoryTypeBits, memProps);
+      if(!res) {
+        Logger::error("Failed to find suitable memory type");
+        return false;
+      }
+      typeStaging = res.value();
+    }
+    
+    vk::MemoryAllocateInfo allocInfo{
+      .allocationSize = memReq.size,
+      .memoryTypeIndex = typeStaging
+    };
+    
+    {
+      auto res = m_logDev.allocateMemory(allocInfo);
+      if(!res) {
+        Logger::error("Failed to allocate buffer memory: {}", vk::to_string(res.error()));
+        return false;
+      }
+      mem = std::move(res.value());
+    }
+    
+    buf.bindMemory(*mem, 0);
+    return true;
+  }
+  
+  bool VulkanRenderer::copyBuffer(vk::raii::Buffer& srcBuf, vk::raii::Buffer& dstBuf, vk::DeviceSize size) {
+    vk::CommandBufferAllocateInfo allocInfo{
+      .commandPool = m_cmdPool,
+      .level = vk::CommandBufferLevel::ePrimary,
+      .commandBufferCount = 1
+    };
+    vk::raii::CommandBuffer comCopyBuf{nullptr};
+    {
+      auto res = m_logDev.allocateCommandBuffers(allocInfo);
+      if(!res) {
+        Logger::error("Failed to allocate command buffer: {}", vk::to_string(res.error()));
+        return false;
+      }
+      comCopyBuf = std::move(res.value().front());
+    }
+    comCopyBuf.begin(vk::CommandBufferBeginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+    comCopyBuf.copyBuffer(srcBuf, dstBuf, vk::BufferCopy(0, 0, size));
+    comCopyBuf.end();
+    
+    m_graphQ.submit(vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &*comCopyBuf}, nullptr);
+    m_graphQ.waitIdle();
+    
+    return true;
+  }
+  
   //====================================================================================================
   
   bool VulkanRenderer::init(Window& wnd) {
@@ -283,6 +354,7 @@ namespace V {
         || !createGraphPipeline()
         || !createCmdPool()
         || !createVBuf()
+        || !createIBuf()
         || !createCmdBufs()
         || !createSyncObjs()
         
@@ -619,50 +691,60 @@ namespace V {
   
   bool VulkanRenderer::createVBuf() {
     
-    vk::BufferCreateInfo bufInfo{
-      .size = sizeof(vertices[0]) * vertices.size(),
-      .usage = vk::BufferUsageFlagBits::eVertexBuffer,
-      .sharingMode = vk::SharingMode::eExclusive
-    };
+    vk::DeviceSize bufSize = sizeof(vertices[0]) * vertices.size();
+    vk::raii::Buffer stagingBuf{nullptr};
+    vk::raii::DeviceMemory stagingBufMem{nullptr};
+    if(!createBuf(
+      bufSize,
+      vk::BufferUsageFlagBits::eTransferSrc,
+      vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+      stagingBuf,
+      stagingBufMem
+    )) return false;
     
-    {
-      auto res = m_logDev.createBuffer(bufInfo);
-      if(!res) {
-        Logger::error("Failed to create vertex buffer: {}", vk::to_string(res.error()));
-        return false;
-      }
-      m_vertBuf = std::move(res.value());
-    }
+    void* dataStaging = stagingBufMem.mapMemory(0, bufSize);
+    memcpy(dataStaging, vertices.data(), bufSize);
+    stagingBufMem.unmapMemory();
     
-    vk::MemoryRequirements memReqs = m_vertBuf.getMemoryRequirements();
-    uint32_t type = 0;
-    {
-      auto res = findMemType(memReqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-      if(!res) {
-        Logger::error("Failed to find suitable memory type");
-        return false;
-      }
-      type = res.value();
-    }
-    vk::MemoryAllocateInfo memInfo{
-      .allocationSize = memReqs.size,
-      .memoryTypeIndex = type
-    };
+    if(!createBuf(
+      bufSize,
+      vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+      vk::MemoryPropertyFlagBits::eDeviceLocal,
+      m_vertBuf,
+      m_vertBufMem
+    )) return false;
     
-    {
-      auto res = m_logDev.allocateMemory(memInfo);
-      if(!res) {
-        Logger::error("Failed to allocate buffer memory: {}", vk::to_string(res.error()));
-        return false;
-      }
-      m_vertBufMem = std::move(res.value());
-    }
+    copyBuffer(stagingBuf, m_vertBuf, bufSize);
     
-    m_vertBuf.bindMemory(*m_vertBufMem, 0);
+    return true;
+  }
+  
+  bool VulkanRenderer::createIBuf() {
+    vk::DeviceSize bufSize = sizeof(indices[0]) * indices.size();
     
-    void* data = m_vertBufMem.mapMemory(0, bufInfo.size);
-    memcpy(data, vertices.data(), bufInfo.size);
-    m_vertBufMem.unmapMemory();
+    vk::raii::Buffer stagingBuf{nullptr};
+    vk::raii::DeviceMemory stagingBufMem{nullptr};
+    if(!createBuf(
+      bufSize,
+      vk::BufferUsageFlagBits::eTransferSrc,
+      vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+      stagingBuf,
+      stagingBufMem
+    )) return false;
+    
+    void* data = stagingBufMem.mapMemory(0, bufSize);
+    memcpy(data, indices.data(), bufSize);
+    stagingBufMem.unmapMemory();
+    
+    if(!createBuf(
+      bufSize,
+      vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+      vk::MemoryPropertyFlagBits::eDeviceLocal,
+      m_indBuf,
+      m_indBufMem
+    )) return false;
+    
+    copyBuffer(stagingBuf, m_indBuf, bufSize);
     
     return true;
   }
