@@ -60,6 +60,9 @@ namespace V {
     bool createCmdPool();
     bool createVBuf();
     bool createIBuf();
+    bool createUBufs();
+    bool createDescPool();
+    bool createDescSets();
     bool createCmdBufs();
     bool createSyncObjs();
     
@@ -80,6 +83,7 @@ namespace V {
     std::expected<uint32_t, std::string> findMemType(uint32_t typeFilter, vk::MemoryPropertyFlags props);
     bool createBuf(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags memProps, vk::raii::Buffer& buf, vk::raii::DeviceMemory& mem);
     bool copyBuffer(vk::raii::Buffer& srcBuf, vk::raii::Buffer& dstBuf, vk::DeviceSize size);
+    void updUBO();
     
     const std::vector<const char*> m_validLayers = {
       "VK_LAYER_KHRONOS_validation"
@@ -104,12 +108,17 @@ namespace V {
     vk::raii::DeviceMemory m_vertBufMem{nullptr};
     vk::raii::Buffer m_indBuf{nullptr};
     vk::raii::DeviceMemory m_indBufMem{nullptr};
+    vk::raii::DescriptorPool m_descPool{nullptr};
     
     std::vector<vk::raii::CommandBuffer> m_cmdBufs;
     std::vector<vk::raii::Semaphore> m_presCompleteSems;
     std::vector<vk::raii::Semaphore> m_renderFinishedSems;
     std::vector<vk::raii::Fence> m_inFlightFences;
     std::vector<vk::Fence> m_imagesInFlight;
+    std::vector<vk::raii::Buffer> m_uniformBufs;
+    std::vector<vk::raii::DeviceMemory> m_uniformBufsMem;
+    std::vector<void*> m_uniformBufsMapped;
+    std::vector<vk::raii::DescriptorSet> m_descSets;
     
     VulkanSwapchain m_sc;
     VulkanPipeline m_pipeline;

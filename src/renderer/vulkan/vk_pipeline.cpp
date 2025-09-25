@@ -1,6 +1,7 @@
 #include "vk_swapchain.hpp"
 #include "vk_pipeline.hpp"
 #include "vk_vertex.hpp"
+#include "vk_ubo.hpp"
 #include "../../tools/logger/logger.hpp"
 
 namespace V {
@@ -115,7 +116,7 @@ namespace V {
       .rasterizerDiscardEnable = vk::False,
       .polygonMode = vk::PolygonMode::eFill,
       .cullMode = vk::CullModeFlagBits::eBack,
-      .frontFace = vk::FrontFace::eClockwise,
+      .frontFace = vk::FrontFace::eCounterClockwise,
       .depthBiasEnable = vk::False,
       .depthBiasSlopeFactor = 1.f,
       .lineWidth = 1.f
@@ -144,8 +145,34 @@ namespace V {
       .pAttachments = & clrBlendAttachment
     };
     
+    //UBO====================================================================================================
+    vk::DescriptorSetLayoutBinding uboLayoutBinding{
+      .binding = 0,
+      .descriptorType = vk::DescriptorType::eUniformBuffer,
+      .descriptorCount = 1,
+      .stageFlags = vk::ShaderStageFlagBits::eVertex,
+      .pImmutableSamplers = nullptr
+    };
+    
+    vk::DescriptorSetLayoutCreateInfo layoutInfo{
+      .flags = {},
+      .bindingCount = 1,
+      .pBindings = &uboLayoutBinding
+    };
+    
+    {
+      auto res = logDev.createDescriptorSetLayout(layoutInfo);
+      if(!res) {
+        Logger::error("Failed to create descriptor set layout: {}", vk::to_string(res.error()));
+        return false;
+      }
+      m_descSetLayout = std::move(res.value());
+    }
+    //UBO====================================================================================================
+    
     vk::PipelineLayoutCreateInfo pipLayoutInfo{
-      .setLayoutCount = 0,
+      .setLayoutCount = 1,
+      .pSetLayouts = &*m_descSetLayout,
       .pushConstantRangeCount = 0
     };
     

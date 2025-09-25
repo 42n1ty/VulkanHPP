@@ -1,5 +1,6 @@
 #include "vk_renderer.hpp"
 #include "vk_vertex.hpp"
+#include "vk_ubo.hpp"
 
 #include "../../core/window.hpp"
 #define GLFW_EXPOSE_NATIVE_WIN32
@@ -95,6 +96,7 @@ namespace V {
     
     m_cmdBufs[m_curFrame].bindVertexBuffers(0, *m_vertBuf, {0});
     m_cmdBufs[m_curFrame].bindIndexBuffer(*m_indBuf, 0, vk::IndexType::eUint16);
+    m_cmdBufs[m_curFrame].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline.getPipLayout(), 0, *(m_descSets[m_curFrame]), nullptr);
     m_cmdBufs[m_curFrame].drawIndexed(indices.size(), 1, 0, 0, 0);
     
     m_cmdBufs[m_curFrame].endRendering();
@@ -179,6 +181,8 @@ namespace V {
       (void)m_logDev.waitForFences({m_imagesInFlight[imgIndex]}, vk::True, UINT64_MAX);
     }
     m_imagesInFlight[imgIndex] = *m_inFlightFences[m_curFrame];
+    
+    updUBO();
     
     m_logDev.resetFences(*m_inFlightFences[m_curFrame]);
     m_cmdBufs[m_curFrame].reset();
@@ -338,6 +342,22 @@ namespace V {
     return true;
   }
   
+  void VulkanRenderer::updUBO() {
+    static auto startTime = std::chrono::high_resolution_clock::now();
+    
+    auto curTime = std::chrono::high_resolution_clock::now();
+    float time = std::chrono::duration<float, std::chrono::seconds::period>(curTime - startTime).count();
+    
+    UniformBufferObject ubo{};
+    ubo.model = glm::rotate(glm::mat4(1.f), time * glm::radians(30.f), glm::vec3(0.f, 0.f, 1.f));
+    ubo.view = glm::lookAt(glm::vec3(2.f, 2.f, 2.f), glm::vec3(0.f, 0.f, 0.f), glm::vec3(0.f, 0.f, 1.f));
+    ubo.proj = glm::perspective(glm::radians(45.f), static_cast<float>(m_sc.getExtent().width) / static_cast<float>(m_sc.getExtent().height), 0.1f, 10.f);
+    
+    ubo.proj[1][1] *= -1;
+    
+    memcpy(m_uniformBufsMapped[m_curFrame], &ubo, sizeof(ubo));
+  }
+  
   //====================================================================================================
   
   bool VulkanRenderer::init(Window& wnd) {
@@ -355,6 +375,9 @@ namespace V {
         || !createCmdPool()
         || !createVBuf()
         || !createIBuf()
+        || !createUBufs()
+        || !createDescPool()
+        || !createDescSets()
         || !createCmdBufs()
         || !createSyncObjs()
         
@@ -745,6 +768,94 @@ namespace V {
     )) return false;
     
     copyBuffer(stagingBuf, m_indBuf, bufSize);
+    
+    return true;
+  }
+  
+  bool VulkanRenderer::createUBufs() {
+    m_uniformBufs.clear();
+    m_uniformBufsMem.clear();
+    m_uniformBufsMapped.clear();
+    
+    for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+      vk::DeviceSize bufSize = sizeof(UniformBufferObject);
+      vk::raii::Buffer buf{nullptr};
+      vk::raii::DeviceMemory bufMem{nullptr};
+      if(!createBuf(
+        bufSize,
+        vk::BufferUsageFlagBits::eUniformBuffer,
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+        buf,
+        bufMem
+      )) return false;
+      m_uniformBufs.emplace_back(std::move(buf));
+      m_uniformBufsMem.emplace_back(std::move(bufMem));
+      m_uniformBufsMapped.emplace_back(m_uniformBufsMem[i].mapMemory(0, bufSize));
+    }
+    
+    return true;
+  }
+  
+  bool VulkanRenderer::createDescPool() {
+    vk::DescriptorPoolSize poolSize{
+      .type = vk::DescriptorType::eUniformBuffer,
+      .descriptorCount = MAX_FRAMES_IN_FLIGHT
+    };
+    
+    vk::DescriptorPoolCreateInfo poolInfo{
+      .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+      .maxSets = MAX_FRAMES_IN_FLIGHT,
+      .poolSizeCount = 1,
+      .pPoolSizes = &poolSize
+    };
+    
+    {
+      auto res = m_logDev.createDescriptorPool(poolInfo);
+      if(!res) {
+        Logger::error("Failed to create descriptor pool: {}", vk::to_string(res.error()));
+        return false;
+      }
+      m_descPool = std::move(res.value());
+    }
+    
+    return true;
+  }
+  
+  bool VulkanRenderer::createDescSets() {
+    
+    std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, *(m_pipeline.getDescSetLayout()));
+    vk::DescriptorSetAllocateInfo allocInfo{
+      .descriptorPool = m_descPool,
+      .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
+      .pSetLayouts = layouts.data()
+    };
+    
+    m_descSets.clear();
+    {
+      auto res = m_logDev.allocateDescriptorSets(allocInfo);
+      if(!res) {
+        Logger::error("Failed to allocate descriptor sets: {}", vk::to_string(res.error()));
+        return false;
+      }
+      m_descSets = std::move(res.value());
+    }
+
+    for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+      vk::DescriptorBufferInfo bufInfo{
+        .buffer = m_uniformBufs[i],
+        .offset = 0,
+        .range = sizeof(UniformBufferObject)
+      };
+      vk::WriteDescriptorSet descWrite{
+        .dstSet = m_descSets[i],
+        .dstBinding = 0,
+        .dstArrayElement = 0,
+        .descriptorCount = 1,
+        .descriptorType = vk::DescriptorType::eUniformBuffer,
+        .pBufferInfo = &bufInfo
+      };
+      m_logDev.updateDescriptorSets(descWrite, {});
+    }
     
     return true;
   }
