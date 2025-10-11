@@ -48,7 +48,7 @@ namespace V {
     return shaderModule;
   }
   
-  bool VulkanPipeline::init(const vk::raii::Device& logDev, VulkanSwapchain& sc) {
+  bool VulkanPipeline::init(const vk::raii::Device& logDev, VulkanSwapchain& sc, vk::raii::DescriptorSetLayout& descSetLayout) {
     
     std::vector<char> shaderCode;
     vk::raii::ShaderModule shaderModule{nullptr};
@@ -145,34 +145,9 @@ namespace V {
       .pAttachments = & clrBlendAttachment
     };
     
-    //UBO====================================================================================================
-    vk::DescriptorSetLayoutBinding uboLayoutBinding{
-      .binding = 0,
-      .descriptorType = vk::DescriptorType::eUniformBuffer,
-      .descriptorCount = 1,
-      .stageFlags = vk::ShaderStageFlagBits::eVertex,
-      .pImmutableSamplers = nullptr
-    };
-    
-    vk::DescriptorSetLayoutCreateInfo layoutInfo{
-      .flags = {},
-      .bindingCount = 1,
-      .pBindings = &uboLayoutBinding
-    };
-    
-    {
-      auto res = logDev.createDescriptorSetLayout(layoutInfo);
-      if(!res) {
-        Logger::error("Failed to create descriptor set layout: {}", vk::to_string(res.error()));
-        return false;
-      }
-      m_descSetLayout = std::move(res.value());
-    }
-    //UBO====================================================================================================
-    
     vk::PipelineLayoutCreateInfo pipLayoutInfo{
       .setLayoutCount = 1,
-      .pSetLayouts = &*m_descSetLayout,
+      .pSetLayouts = &*descSetLayout,
       .pushConstantRangeCount = 0
     };
     

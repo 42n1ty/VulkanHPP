@@ -48,7 +48,8 @@ namespace V {
     bool framebufferResized = false;
     
   private:
-  
+    
+    // INIT FUNCS====================================================================================================
     bool createInstance();
     bool setupDM();
     bool pickPhysDev();
@@ -56,8 +57,14 @@ namespace V {
     bool createSurf(Window& wnd);
     bool createSwapchain(Window& wnd);
     bool createImgViews();
+    bool createDescSetLayout();
     bool createGraphPipeline();
     bool createCmdPool();
+    
+    bool createTextureImg();
+    bool createTextureImgView();
+    bool createTextureSampler();
+    
     bool createVBuf();
     bool createIBuf();
     bool createUBufs();
@@ -65,7 +72,9 @@ namespace V {
     bool createDescSets();
     bool createCmdBufs();
     bool createSyncObjs();
+    // INIT FUNCS====================================================================================================
     
+    // HELPERS FUNCS====================================================================================================
     std::vector<const char*> getReqExtensions();
     void printDev();
     void recordCmdBuf(uint32_t index);
@@ -84,6 +93,22 @@ namespace V {
     bool createBuf(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags memProps, vk::raii::Buffer& buf, vk::raii::DeviceMemory& mem);
     bool copyBuffer(vk::raii::Buffer& srcBuf, vk::raii::Buffer& dstBuf, vk::DeviceSize size);
     void updUBO();
+    bool createImage(
+      uint32_t w,
+      uint32_t h,
+      vk::Format format,
+      vk::ImageTiling tiling,
+      vk::ImageUsageFlags usage,
+      vk::MemoryPropertyFlags props,
+      vk::raii::Image& image,
+      vk::raii::DeviceMemory& imageMem
+    );
+    bool beginSingleTimeComs(vk::raii::CommandBuffer& buf);
+    bool endSingleTimeComs(vk::raii::CommandBuffer& buf);
+    bool transitionImageLayout(const vk::raii::Image& img, vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
+    bool copyBufToImg(const vk::raii::Buffer& buf, vk::raii::Image& img, uint32_t w, uint32_t h);
+    bool createImgView(const vk::Image& img, vk::Format format, vk::raii::ImageView& iv);
+    // HELPERS FUNCS====================================================================================================
     
     const std::vector<const char*> m_validLayers = {
       "VK_LAYER_KHRONOS_validation"
@@ -108,7 +133,13 @@ namespace V {
     vk::raii::DeviceMemory m_vertBufMem{nullptr};
     vk::raii::Buffer m_indBuf{nullptr};
     vk::raii::DeviceMemory m_indBufMem{nullptr};
+    vk::raii::DescriptorSetLayout m_descSetLayout{nullptr};
     vk::raii::DescriptorPool m_descPool{nullptr};
+    
+    vk::raii::Image m_texImg{nullptr};
+    vk::raii::DeviceMemory m_texImgMem{nullptr};
+    vk::raii::ImageView m_texImgView{nullptr};
+    vk::raii::Sampler m_texSampler{nullptr};
     
     std::vector<vk::raii::CommandBuffer> m_cmdBufs;
     std::vector<vk::raii::Semaphore> m_presCompleteSems;

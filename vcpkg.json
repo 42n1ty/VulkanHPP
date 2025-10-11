@@ -1,10 +1,11 @@
 {
-  "name": "crimsonsouls",
+  "name": "vulkanhpp",
   "version-string": "0.1.0",
   "builtin-baseline": "3f8078010e5ec665602f564df755e41479aafd73",
   "dependencies": [
     "glfw3",
     "glm",
-    "fmt"
+    "fmt",
+    "stb"
   ]
 }
