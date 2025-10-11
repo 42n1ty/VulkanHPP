@@ -6,9 +6,6 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/../bin)
 #include(CTest)
 #enable_testing()
 
-# Укажем компилятор
-#set(CMAKE_CXX_COMPILER clang++.exe)
-
 # Укажем стандарт C++
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
@@ -18,21 +15,27 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 #SHADERS------------------------------------------------------------------------------------------------------------
 function (add_slang_shader_target TARGET)
   cmake_parse_arguments ("SHADER" "" "" "SOURCES" ${ARGN})
-  set (SHADERS_SRC_DIR ${CMAKE_CURRENT_LIST_DIR}/src/shaders)
-  set (SHADERS_OUTPUT_DIR ${CMAKE_CURRENT_LIST_DIR}/assets/shaders)
-  set (ENTRY_POINTS -entry vertMain -entry fragMain)
-  add_custom_command (
-    OUTPUT ${SHADERS_OUTPUT_DIR}
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${SHADERS_OUTPUT_DIR}
-  )
-  add_custom_command (
-    OUTPUT  ${SHADERS_OUTPUT_DIR}/slang.spv
-    COMMAND ${SLANGC_EXECUTABLE} ${SHADER_SOURCES} -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name ${ENTRY_POINTS} -o ${SHADERS_OUTPUT_DIR}/shader.spv
-    DEPENDS ${SHADERS_SRC_DIR} ${SHADER_SOURCES}
-    COMMENT "Compiling Slang Shaders"
+
+  set(OUTPUT_SHADER_NAME "shader.spv")
+  set(SHADERS_SRC_DIR ${CMAKE_CURRENT_LIST_DIR}/src/shaders)
+  set(SHADERS_OUTPUT_DIR ${CMAKE_CURRENT_LIST_DIR}/assets/shaders)
+  set(FINAL_SHADER_PATH ${SHADERS_OUTPUT_DIR}/${OUTPUT_SHADER_NAME})
+  set(ENTRY_POINTS -entry vertMain -entry fragMain)
+
+  file(MAKE_DIRECTORY ${SHADERS_OUTPUT_DIR})
+
+  add_custom_command(
+    OUTPUT  ${FINAL_SHADER_PATH}
+
+    COMMAND ${SLANGC_EXECUTABLE} ${SHADER_SOURCES} -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name ${ENTRY_POINTS} -o ${FINAL_SHADER_PATH}
+    
+    DEPENDS ${SHADER_SOURCES}
+    
+    COMMENT "Compiling Slang Shaders to ${FINAL_SHADER_PATH}"
     VERBATIM
   )
-  add_custom_target (${TARGET} DEPENDS ${SHADERS_OUTPUT_DIR}/slang.spv)
+
+  add_custom_target(${TARGET} DEPENDS ${FINAL_SHADER_PATH})
 endfunction()
 
 set(SHADERS_SRC
@@ -96,7 +99,7 @@ endif()
 find_package(glfw3 CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 #find_package(unofficial-shaderc CONFIG REQUIRED)
-# find_package(stb CONFIG REQUIRED)
+find_package(Stb REQUIRED) #NO CONFIG
 # find_package(glm CONFIG REQUIRED)
 # find_package(glad CONFIG REQUIRED)
 

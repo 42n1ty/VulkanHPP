@@ -4,6 +4,7 @@
 		"C:\\Progs\\Vulkan\\Include\\",
 		"C:\\Progs\\vcpkg\\packages\\vk-bootstrap_x64-windows-static-md\\include",
 		"C:\\Progs\\vcpkg\\packages\\vulkan-memory-allocator_x64-windows-static-md\\include",
+		"C:\\Progs\\vcpkg\\packages\\stb_x64-windows-static-md\\include",
 	],
 	"files.associations": {
     "chrono": "cpp",

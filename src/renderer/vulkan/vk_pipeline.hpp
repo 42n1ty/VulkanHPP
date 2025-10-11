@@ -12,10 +12,9 @@ namespace V {
     VulkanPipeline();
     ~VulkanPipeline();
     
-    bool init(const vk::raii::Device&, VulkanSwapchain&);
+    bool init(const vk::raii::Device&, VulkanSwapchain&, vk::raii::DescriptorSetLayout&);
     
     vk::raii::Pipeline& getPipeline() { return m_pipeline; }
-    vk::raii::DescriptorSetLayout& getDescSetLayout() { return m_descSetLayout; }
     vk::raii::PipelineLayout& getPipLayout() { return m_pipelineLayout; }
     
   private:
@@ -24,7 +23,6 @@ namespace V {
     [[nodiscard]] std::optional<vk::raii::ShaderModule> createShaderModule(const vk::raii::Device& dev, const std::vector<char>& code) const;
     
     vk::raii::Pipeline m_pipeline{nullptr};
-    vk::raii::DescriptorSetLayout m_descSetLayout{nullptr};
     vk::raii::PipelineLayout m_pipelineLayout{nullptr};
     
   };
