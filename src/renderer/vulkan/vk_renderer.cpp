@@ -75,19 +75,57 @@ namespace V {
       vk::PipelineStageFlagBits2::eTopOfPipe,
       vk::PipelineStageFlagBits2::eColorAttachmentOutput
     );
+    
+    vk::ImageMemoryBarrier2 depthBarrier{
+      .srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
+      .srcAccessMask = {},
+      .dstStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+      .dstAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+      .oldLayout = vk::ImageLayout::eUndefined,
+      .newLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
+      .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+      .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+      .image = m_depthImg,
+      .subresourceRange = {
+        .aspectMask = vk::ImageAspectFlagBits::eDepth,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1
+      }
+    };
+    vk::DependencyInfo depthDependencyInfo = {
+      .dependencyFlags = {},
+      .imageMemoryBarrierCount = 1,
+      .pImageMemoryBarriers = &depthBarrier
+    };
+    m_cmdBufs[m_curFrame].pipelineBarrier2(depthDependencyInfo);
+    
     vk::ClearValue clearClr = vk::ClearColorValue(0.f, 0.f, 0.f, 1.f);
-    vk::RenderingAttachmentInfo attachmentInfo{
+    vk::ClearValue clearDepth = vk::ClearDepthStencilValue(1.0f, 0);
+    
+    vk::RenderingAttachmentInfo clrAttachmentInfo{
       .imageView = m_imgViews[index],
       .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
       .loadOp = vk::AttachmentLoadOp::eClear,
       .storeOp = vk::AttachmentStoreOp::eStore,
       .clearValue = clearClr
     };
+    
+    vk::RenderingAttachmentInfo dpthAttachmentInfo{
+      .imageView = m_depthImgView,
+      .imageLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
+      .loadOp = vk::AttachmentLoadOp::eClear,
+      .storeOp = vk::AttachmentStoreOp::eDontCare,
+      .clearValue = clearDepth
+    };
+    
     vk::RenderingInfo renderingInfo{
       .renderArea = {.offset = {0, 0}, .extent = m_sc.getExtent()},
       .layerCount = 1,
       .colorAttachmentCount = 1,
-      .pColorAttachments = &attachmentInfo
+      .pColorAttachments = &clrAttachmentInfo,
+      .pDepthAttachment = &dpthAttachmentInfo
     };
     
     m_cmdBufs[m_curFrame].beginRendering(renderingInfo);
@@ -502,7 +540,7 @@ namespace V {
     return true;
   }
   
-  bool VulkanRenderer::createImgView(const vk::Image& img, vk::Format format, vk::raii::ImageView& iv) {
+  bool VulkanRenderer::createImgView(const vk::Image& img, vk::Format format, vk::ImageAspectFlags aspectFlags, vk::raii::ImageView& iv) {
     
     vk::ImageViewCreateInfo viewInfo{
       .flags = {},
@@ -510,7 +548,7 @@ namespace V {
       .viewType = vk::ImageViewType::e2D,
       .format = format,
       .components = {},
-      .subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }
+      .subresourceRange = { aspectFlags, 0, 1, 0, 1 }
     };
     
     auto res = m_logDev.createImageView(viewInfo);
@@ -519,6 +557,43 @@ namespace V {
       return false;
     }
     iv = std::move(res.value());
+    
+    return true;
+  }
+  
+  bool VulkanRenderer::findSupFormat(
+    vk::Format& format,
+    const std::vector<vk::Format>& candidates,
+    vk::ImageTiling tiling,
+    vk::FormatFeatureFlags features
+  ) {
+    
+    for(const auto frmt : candidates) {
+      vk::FormatProperties props = m_physDev.getFormatProperties(frmt);
+      
+      if(tiling == vk::ImageTiling::eLinear && (props.linearTilingFeatures & features) == features) {
+        format = frmt;
+        return true;
+      }
+      if(tiling == vk::ImageTiling::eOptimal && (props.optimalTilingFeatures & features) == features) {
+        format = frmt;
+        return true;
+      }
+    }
+    
+    Logger::error("Failed to find supported format");
+    return false;
+  }
+  
+  bool VulkanRenderer::findDepthFormat(vk::Format& format) {
+    
+    if(!findSupFormat(
+          format,
+          { vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint },
+          vk::ImageTiling::eOptimal,
+          vk::FormatFeatureFlagBits::eDepthStencilAttachment
+        )
+    ) return false;
     
     return true;
   }
@@ -540,6 +615,7 @@ namespace V {
         || !createGraphPipeline()
         || !createCmdPool()
         
+        || !createDepthRes()
         || !createTextureImg()
         || !createTextureImgView()
         || !createTextureSampler()
@@ -837,7 +913,7 @@ namespace V {
     for(auto& img : m_sc.getImgs()) {
       vk::raii::ImageView temp{nullptr};
       
-      if(!createImgView(img, m_sc.getFormat(), temp)) {
+      if(!createImgView(img, m_sc.getFormat(), vk::ImageAspectFlagBits::eColor, temp)) {
         return false;
       }
       
@@ -885,7 +961,11 @@ namespace V {
   }
   
   bool VulkanRenderer::createGraphPipeline() {
-    if(!m_pipeline.init(m_logDev, m_sc, m_descSetLayout)) {
+    
+    vk::Format depthFormat;
+    if(!findDepthFormat(depthFormat)) return false;
+    
+    if(!m_pipeline.init(m_logDev, m_sc, m_descSetLayout, depthFormat)) {
       return false;
     }
     
@@ -907,6 +987,27 @@ namespace V {
       }
       m_cmdPool = std::move(res.value());
     }
+    
+    return true;
+  }
+  
+  bool VulkanRenderer::createDepthRes() {
+    
+    vk::Format depthFormat;
+    if(!findDepthFormat(depthFormat)) return false;
+    
+    if(!createImage(
+          m_sc.getExtent().width,
+          m_sc.getExtent().height,
+          depthFormat,
+          vk::ImageTiling::eOptimal,
+          vk::ImageUsageFlagBits::eDepthStencilAttachment,
+          vk::MemoryPropertyFlagBits::eDeviceLocal,
+          m_depthImg,
+          m_depthImgMem
+        )
+    ) return false;
+    if(!createImgView(m_depthImg, depthFormat, vk::ImageAspectFlagBits::eDepth, m_depthImgView)) return false;
     
     return true;
   }
@@ -957,7 +1058,7 @@ namespace V {
   
   bool VulkanRenderer::createTextureImgView() {
     
-    if(!createImgView(*m_texImg, vk::Format::eR8G8B8A8Srgb, m_texImgView)) {
+    if(!createImgView(*m_texImg, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, m_texImgView)) {
       return false;
     }
     

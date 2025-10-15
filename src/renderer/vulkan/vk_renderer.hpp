@@ -61,6 +61,7 @@ namespace V {
     bool createGraphPipeline();
     bool createCmdPool();
     
+    bool createDepthRes();
     bool createTextureImg();
     bool createTextureImgView();
     bool createTextureSampler();
@@ -107,7 +108,9 @@ namespace V {
     bool endSingleTimeComs(vk::raii::CommandBuffer& buf);
     bool transitionImageLayout(const vk::raii::Image& img, vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
     bool copyBufToImg(const vk::raii::Buffer& buf, vk::raii::Image& img, uint32_t w, uint32_t h);
-    bool createImgView(const vk::Image& img, vk::Format format, vk::raii::ImageView& iv);
+    bool createImgView(const vk::Image& img, vk::Format format, vk::ImageAspectFlags aspectFlags, vk::raii::ImageView& iv);
+    bool findSupFormat(vk::Format& format, const std::vector<vk::Format>& candidates, vk::ImageTiling tiling, vk::FormatFeatureFlags features);
+    bool findDepthFormat(vk::Format& format);
     // HELPERS FUNCS====================================================================================================
     
     const std::vector<const char*> m_validLayers = {
@@ -140,6 +143,10 @@ namespace V {
     vk::raii::DeviceMemory m_texImgMem{nullptr};
     vk::raii::ImageView m_texImgView{nullptr};
     vk::raii::Sampler m_texSampler{nullptr};
+    
+    vk::raii::Image m_depthImg{nullptr};
+    vk::raii::DeviceMemory m_depthImgMem{nullptr};
+    vk::raii::ImageView m_depthImgView{nullptr};
     
     std::vector<vk::raii::CommandBuffer> m_cmdBufs;
     std::vector<vk::raii::Semaphore> m_presCompleteSems;
