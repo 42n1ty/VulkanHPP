@@ -48,7 +48,7 @@ namespace V {
     return shaderModule;
   }
   
-  bool VulkanPipeline::init(const vk::raii::Device& logDev, VulkanSwapchain& sc, vk::raii::DescriptorSetLayout& descSetLayout) {
+  bool VulkanPipeline::init(const vk::raii::Device& logDev, VulkanSwapchain& sc, vk::raii::DescriptorSetLayout& descSetLayout, vk::Format format) {
     
     std::vector<char> shaderCode;
     vk::raii::ShaderModule shaderModule{nullptr};
@@ -93,7 +93,8 @@ namespace V {
     };
     
     vk::PipelineInputAssemblyStateCreateInfo inputAssembly{
-      .topology = vk::PrimitiveTopology::eTriangleList
+      .topology = vk::PrimitiveTopology::eTriangleList,
+      .primitiveRestartEnable = vk::False
     };
     
     std::vector<vk::DynamicState> dynStates = {
@@ -127,8 +128,16 @@ namespace V {
       .sampleShadingEnable = vk::False
     };
     
+    vk::PipelineDepthStencilStateCreateInfo depthStencil{
+      .depthTestEnable = vk::True,
+      .depthWriteEnable = vk::True,
+      .depthCompareOp = vk::CompareOp::eLess,
+      .depthBoundsTestEnable = vk::False,
+      .stencilTestEnable = vk::False
+    };
+    
     vk::PipelineColorBlendAttachmentState clrBlendAttachment{
-      .blendEnable = vk::True,
+      .blendEnable = vk::False,
       .srcColorBlendFactor = vk::BlendFactor::eSrcAlpha,
       .dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
       .colorBlendOp = vk::BlendOp::eAdd,
@@ -142,7 +151,7 @@ namespace V {
       .logicOpEnable = vk::False,
       .logicOp = vk::LogicOp::eCopy,
       .attachmentCount = 1,
-      .pAttachments = & clrBlendAttachment
+      .pAttachments = &clrBlendAttachment
     };
     
     vk::PipelineLayoutCreateInfo pipLayoutInfo{
@@ -162,7 +171,8 @@ namespace V {
     
     vk::PipelineRenderingCreateInfo pipRenderCreateInfo{
       .colorAttachmentCount = 1,
-      .pColorAttachmentFormats = &sc.getFormat()
+      .pColorAttachmentFormats = &sc.getFormat(),
+      .depthAttachmentFormat = format
     };
     
     
@@ -175,6 +185,7 @@ namespace V {
       .pViewportState = &viewportState,
       .pRasterizationState = &rasterizer,
       .pMultisampleState = &multisampling,
+      .pDepthStencilState = &depthStencil,
       .pColorBlendState = &clrBlending,
       .pDynamicState = &dynamicState,
       .layout = m_pipelineLayout,

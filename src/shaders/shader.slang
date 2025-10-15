@@ -1,5 +1,5 @@
 struct VSInput {
-    float2 inPos;
+    float3 inPos;
     float3 inClr;
     float2 inTexCoord;
 };
@@ -20,7 +20,7 @@ struct VSOutput {
 [shader("vertex")]
 VSOutput vertMain(VSInput input) {
     VSOutput output;
-    output.pos = mul(ubo.proj, mul(ubo.view, mul(ubo.model, float4(input.inPos, 0.f, 1.f))));
+    output.pos = mul(ubo.proj, mul(ubo.view, mul(ubo.model, float4(input.inPos, 1.f))));
     output.clr = input.inClr;
     output.texCoord = input.inTexCoord;
     return output;

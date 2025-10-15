@@ -12,7 +12,7 @@ namespace V {
     VulkanPipeline();
     ~VulkanPipeline();
     
-    bool init(const vk::raii::Device&, VulkanSwapchain&, vk::raii::DescriptorSetLayout&);
+    bool init(const vk::raii::Device&, VulkanSwapchain&, vk::raii::DescriptorSetLayout&, vk::Format);
     
     vk::raii::Pipeline& getPipeline() { return m_pipeline; }
     vk::raii::PipelineLayout& getPipLayout() { return m_pipelineLayout; }
