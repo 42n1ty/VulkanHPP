@@ -281,6 +281,9 @@ namespace V {
     createSwapchain(*m_wnd);
     createImgViews();
     createGraphPipeline();
+    
+    createDepthRes();
+    
     size_t imageCount = m_sc.getImgs().size();
     m_imagesInFlight.assign(imageCount, nullptr);
   }
