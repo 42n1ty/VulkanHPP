@@ -33,15 +33,8 @@
 
 #include "../../tools/logger/logger.hpp"
 
-namespace CS {
+namespace V {
   
-  #define VK_CHECK(x)\
-  do {\
-    VkResult err = x;\
-    if(err) {\
-      Logger::error("Detected Vulkan error: {}", string_VkResult(err));\
-      abort();\
-    }\
-  } while(0)\
+  const uint32_t MAX_FRAMES_IN_FLIGHT = 2;
   
-}; //CS
+}; //V
