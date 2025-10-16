@@ -66,8 +66,8 @@ namespace V {
   void VulkanRenderer::recordCmdBuf(uint32_t index) {
     m_cmdBufs[m_curFrame].begin({});
     
-    transitionImgLayout(
-      index,
+    transitionImageLayout(
+      m_sc.getImgs()[index],
       vk::ImageLayout::eUndefined,
       vk::ImageLayout::eColorAttachmentOptimal,
       {},
@@ -134,15 +134,15 @@ namespace V {
     m_cmdBufs[m_curFrame].setViewport(0, vk::Viewport(0.f, 0.f, static_cast<float>(m_sc.getExtent().width), static_cast<float>(m_sc.getExtent().height), 0.f, 1.f));
     m_cmdBufs[m_curFrame].setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), m_sc.getExtent()));
     
-    m_cmdBufs[m_curFrame].bindVertexBuffers(0, *m_vertBuf, {0});
-    m_cmdBufs[m_curFrame].bindIndexBuffer(*m_indBuf, 0, vk::IndexType::eUint16);
+    m_cmdBufs[m_curFrame].bindVertexBuffers(0, *m_buf.getVBuf(), {0});
+    m_cmdBufs[m_curFrame].bindIndexBuffer(*m_buf.getIBuf(), 0, vk::IndexType::eUint16);
     m_cmdBufs[m_curFrame].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline.getPipLayout(), 0, *(m_descSets[m_curFrame]), nullptr);
     m_cmdBufs[m_curFrame].drawIndexed(indices.size(), 1, 0, 0, 0);
     
     m_cmdBufs[m_curFrame].endRendering();
     
-    transitionImgLayout(
-      index,
+    transitionImageLayout(
+      m_sc.getImgs()[index],
       vk::ImageLayout::eColorAttachmentOptimal,
       vk::ImageLayout::ePresentSrcKHR,
       vk::AccessFlagBits2::eColorAttachmentWrite,
@@ -152,43 +152,6 @@ namespace V {
     );
     
     m_cmdBufs[m_curFrame].end();
-  }
-  
-  void VulkanRenderer::transitionImgLayout(
-    uint32_t imgInd,
-    vk::ImageLayout oldLayout,
-    vk::ImageLayout newLayout,
-    vk::AccessFlags2 srcAccessMask,
-    vk::AccessFlags2 dstAccessMask,
-    vk::PipelineStageFlags2 srcStageMask,
-    vk::PipelineStageFlags2 dstStageMask
-  ) {
-    vk::ImageMemoryBarrier2 barrier{
-      .srcStageMask = srcStageMask,
-      .srcAccessMask = srcAccessMask,
-      .dstStageMask = dstStageMask,
-      .dstAccessMask = dstAccessMask,
-      .oldLayout = oldLayout,
-      .newLayout = newLayout,
-      .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-      .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-      .image = m_sc.getImgs()[imgInd],
-      .subresourceRange = {
-        .aspectMask = vk::ImageAspectFlagBits::eColor,
-        .baseMipLevel = 0,
-        .levelCount = 1,
-        .baseArrayLayer = 0,
-        .layerCount = 1
-      }
-    };
-    
-    vk::DependencyInfo dependInfo{
-      .dependencyFlags = {},
-      .imageMemoryBarrierCount = 1,
-      .pImageMemoryBarriers = &barrier
-    };
-    
-    m_cmdBufs[m_curFrame].pipelineBarrier2(dependInfo);
   }
   
   bool VulkanRenderer::drawFrame() {
@@ -222,7 +185,7 @@ namespace V {
     }
     m_imagesInFlight[imgIndex] = *m_inFlightFences[m_curFrame];
     
-    updUBO();
+    m_buf.updUBO();
     
     m_logDev.resetFences(*m_inFlightFences[m_curFrame]);
     m_cmdBufs[m_curFrame].reset();
@@ -302,124 +265,6 @@ namespace V {
     }
   }
   
-  std::expected<uint32_t, std::string> VulkanRenderer::findMemType(uint32_t typeFilter, vk::MemoryPropertyFlags props) {
-    
-    vk::PhysicalDeviceMemoryProperties memProps = m_physDev.getMemoryProperties();
-    for(uint32_t i = 0; i < memProps.memoryTypeCount; ++i) {
-      if((typeFilter & (1 << i)) && (memProps.memoryTypes[i].propertyFlags & props) == props) {
-        return i;
-      }
-    }
-    
-    return std::unexpected("no suitable memory type");
-    
-  }
-  
-  bool VulkanRenderer::createBuf(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags memProps, vk::raii::Buffer& buf, vk::raii::DeviceMemory& mem) {
-    vk::BufferCreateInfo info{
-      .size = size,
-      .usage = usage,
-      .sharingMode = vk::SharingMode::eExclusive
-    };
-    
-    {
-      auto res = m_logDev.createBuffer(info);
-      if(!res) {
-        Logger::error("Failed to create staging buffer: {}", vk::to_string(res.error()));
-        return false;
-      }
-      buf = std::move(res.value());
-    }
-    
-    vk::MemoryRequirements memReq = buf.getMemoryRequirements();
-    uint32_t typeStaging = 0;
-    {
-      auto res = findMemType(memReq.memoryTypeBits, memProps);
-      if(!res) {
-        Logger::error("Failed to find suitable memory type");
-        return false;
-      }
-      typeStaging = res.value();
-    }
-    
-    vk::MemoryAllocateInfo allocInfo{
-      .allocationSize = memReq.size,
-      .memoryTypeIndex = typeStaging
-    };
-    
-    {
-      auto res = m_logDev.allocateMemory(allocInfo);
-      if(!res) {
-        Logger::error("Failed to allocate buffer memory: {}", vk::to_string(res.error()));
-        return false;
-      }
-      mem = std::move(res.value());
-    }
-    
-    buf.bindMemory(*mem, 0);
-    return true;
-  }
-  
-  bool VulkanRenderer::beginSingleTimeComs(vk::raii::CommandBuffer& buf) {
-    
-    vk::CommandBufferAllocateInfo allocInfo{
-      .commandPool = m_cmdPool,
-      .level = vk::CommandBufferLevel::ePrimary,
-      .commandBufferCount = 1
-    };
-    
-    {
-      auto res = m_logDev.allocateCommandBuffers(allocInfo);
-      if(!res) {
-        Logger::error("Failed to allocate command buffer: {}", vk::to_string(res.error()));
-        return false;
-      }
-      buf = std::move(res.value().front());
-    }
-    
-    buf.begin(vk::CommandBufferBeginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
-    
-    return true;
-  }
-  
-  bool VulkanRenderer::endSingleTimeComs(vk::raii::CommandBuffer& buf) {
-    
-    buf.end();
-    
-    m_graphQ.submit(vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &*buf}, nullptr);
-    m_graphQ.waitIdle();
-    
-    return true;
-  }
-  
-  bool VulkanRenderer::copyBuffer(vk::raii::Buffer& srcBuf, vk::raii::Buffer& dstBuf, vk::DeviceSize size) {
-    
-    vk::raii::CommandBuffer comCopyBuf{nullptr};
-    if(!beginSingleTimeComs(comCopyBuf)) return false;
-    
-    comCopyBuf.copyBuffer(srcBuf, dstBuf, vk::BufferCopy(0, 0, size));
-    
-    if(!endSingleTimeComs(comCopyBuf)) return false;
-    
-    return true;
-  }
-  
-  void VulkanRenderer::updUBO() {
-    static auto startTime = std::chrono::high_resolution_clock::now();
-    
-    auto curTime = std::chrono::high_resolution_clock::now();
-    float time = std::chrono::duration<float, std::chrono::seconds::period>(curTime - startTime).count();
-    
-    UniformBufferObject ubo{};
-    ubo.model = glm::rotate(glm::mat4(1.f), time * glm::radians(30.f), glm::vec3(0.f, 0.f, 1.f));
-    ubo.view = glm::lookAt(glm::vec3(2.f, 2.f, 2.f), glm::vec3(0.f, 0.f, 0.f), glm::vec3(0.f, 0.f, 1.f));
-    ubo.proj = glm::perspective(glm::radians(45.f), static_cast<float>(m_sc.getExtent().width) / static_cast<float>(m_sc.getExtent().height), 0.1f, 10.f);
-    
-    ubo.proj[1][1] *= -1;
-    
-    memcpy(m_uniformBufsMapped[m_curFrame], &ubo, sizeof(ubo));
-  }
-  
   bool VulkanRenderer::createImage(
     uint32_t w,
     uint32_t h,
@@ -456,7 +301,7 @@ namespace V {
     vk::MemoryRequirements memReq = image.getMemoryRequirements();
     uint32_t typeIndex = 0;
     {
-      auto res = findMemType(memReq.memoryTypeBits, props);
+      auto res = m_buf.findMemType(memReq.memoryTypeBits, props);
       if(!res) {
         Logger::error("Failed to find suitable memory type");
         return false;
@@ -481,51 +326,93 @@ namespace V {
     return true;
   }
   
-  bool VulkanRenderer::transitionImageLayout(const vk::raii::Image& img, vk::ImageLayout oldLayout, vk::ImageLayout newLayout) {
-    vk::raii::CommandBuffer cmdBuf{nullptr};
-    if(!beginSingleTimeComs(cmdBuf)) return false;
+  bool VulkanRenderer::transitionImageLayout(
+    const vk::Image& image,
+    vk::ImageLayout oldLayout,
+    vk::ImageLayout newLayout,
+    vk::AccessFlags2 srcAccessMask,
+    vk::AccessFlags2 dstAccessMask,
+    vk::PipelineStageFlags2 srcStageMask,
+    vk::PipelineStageFlags2 dstStageMask,
+    vk::raii::CommandBuffer* cmdBuf
+  ) {
     
-    vk::PipelineStageFlags sourceStage;
-    vk::PipelineStageFlags destStage;
+    vk::raii::CommandBuffer tempCmdBuf{nullptr};
+    bool useTemp = (cmdBuf == nullptr);
     
-    vk::ImageMemoryBarrier barrier{
-      .srcAccessMask = {},
-      .dstAccessMask = {},
+    if(useTemp) {
+      if(!m_buf.beginSingleTimeComs(tempCmdBuf)) return false;
+      cmdBuf = &tempCmdBuf;
+    }
+
+    vk::ImageMemoryBarrier2 barrier{
+      .srcStageMask = srcStageMask,
+      .srcAccessMask = srcAccessMask,
+      .dstStageMask = dstStageMask,
+      .dstAccessMask = dstAccessMask,
       .oldLayout = oldLayout,
       .newLayout = newLayout,
-      .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-      .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-      .image = img,
-      .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
+      .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .image = image,
+      .subresourceRange = {
+        .aspectMask = vk::ImageAspectFlagBits::eColor,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1
+      }
     };
-    
+
+    // Обработка специальных случаев переходов
     if(oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eTransferDstOptimal) {
       barrier.srcAccessMask = {};
-      barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
-      
-      sourceStage = vk::PipelineStageFlagBits::eTopOfPipe;
-      destStage = vk::PipelineStageFlagBits::eTransfer;
-    } else if(oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal) {
-      barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-      barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-      
-      sourceStage = vk::PipelineStageFlagBits::eTransfer;
-      destStage = vk::PipelineStageFlagBits::eFragmentShader;
-    } else {
-      Logger::error("unsupported layout transition");
+      barrier.dstAccessMask = vk::AccessFlagBits2::eTransferWrite;
+      barrier.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe;
+      barrier.dstStageMask = vk::PipelineStageFlagBits2::eTransfer;
+    } 
+    else if(oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal) {
+      barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
+      barrier.dstAccessMask = vk::AccessFlagBits2::eShaderRead;
+      barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
+      barrier.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader;
+    }
+    else if(oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eColorAttachmentOptimal) {
+      barrier.srcAccessMask = srcAccessMask;
+      barrier.dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite;
+      barrier.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe;
+      barrier.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+    }
+    else if(oldLayout == vk::ImageLayout::eColorAttachmentOptimal && newLayout == vk::ImageLayout::ePresentSrcKHR) {
+      barrier.srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite;
+      barrier.dstAccessMask = {};
+      barrier.srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+      barrier.dstStageMask = vk::PipelineStageFlagBits2::eBottomOfPipe;
+    }
+    else {
+      Logger::error("Unsupported layout transition from {} to {}", vk::to_string(oldLayout), vk::to_string(newLayout));
       return false;
     }
-    
-    cmdBuf.pipelineBarrier(sourceStage, destStage, {}, {}, nullptr, barrier);
-    
-    if(!endSingleTimeComs(cmdBuf)) return false;
+
+    vk::DependencyInfo dependInfo{
+      .dependencyFlags = {},
+      .imageMemoryBarrierCount = 1,
+      .pImageMemoryBarriers = &barrier
+    };
+
+    cmdBuf->pipelineBarrier2(dependInfo);
+
+    // Завершаем временный командный буфер если он использовался
+    if(useTemp) {
+      if(!m_buf.endSingleTimeComs(tempCmdBuf)) return false;
+    }
     
     return true;
   }
   
   bool VulkanRenderer::copyBufToImg(const vk::raii::Buffer& buf, vk::raii::Image& img, uint32_t w, uint32_t h) {
     vk::raii::CommandBuffer cmdBuf{nullptr};
-    if(!beginSingleTimeComs(cmdBuf)) return false;
+    if(!m_buf.beginSingleTimeComs(cmdBuf)) return false;
     
     vk::BufferImageCopy region{
       .bufferOffset = 0,
@@ -538,7 +425,7 @@ namespace V {
     
     cmdBuf.copyBufferToImage(buf, img, vk::ImageLayout::eTransferDstOptimal, {region});
     
-    if(!endSingleTimeComs(cmdBuf)) return false;
+    if(!m_buf.endSingleTimeComs(cmdBuf)) return false;
     
     return true;
   }
@@ -618,14 +505,13 @@ namespace V {
         || !createGraphPipeline()
         || !createCmdPool()
         
+        || !createBuffer()
+        
         || !createDepthRes()
         || !createTextureImg()
         || !createTextureImgView()
         || !createTextureSampler()
         
-        || !createVBuf()
-        || !createIBuf()
-        || !createUBufs()
         || !createDescPool()
         || !createDescSets()
         || !createCmdBufs()
@@ -994,6 +880,20 @@ namespace V {
     return true;
   }
   
+  bool VulkanRenderer::createBuffer() {
+    
+    if(!m_buf.init(m_physDev, m_logDev, m_sc, m_cmdPool, m_graphQ, m_curFrame)) {
+      Logger::error("Failed to init buffer helper");
+      return false;
+    }
+
+		m_buf.createVBuf();
+		m_buf.createIBuf();
+		m_buf.createUBufs();
+    
+    return true;
+  }
+  
   bool VulkanRenderer::createDepthRes() {
     
     vk::Format depthFormat;
@@ -1029,7 +929,7 @@ namespace V {
     vk::raii::Buffer stagingBuf({nullptr});
     vk::raii::DeviceMemory stagingBufMem({nullptr});
     
-    if(!createBuf(
+    if(!m_buf.createBuf(
       imgSize,
       vk::BufferUsageFlagBits::eTransferSrc,
       vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
@@ -1101,90 +1001,6 @@ namespace V {
     return true;
   }
   
-  bool VulkanRenderer::createVBuf() {
-    
-    vk::DeviceSize bufSize = sizeof(vertices[0]) * vertices.size();
-    vk::raii::Buffer stagingBuf{nullptr};
-    vk::raii::DeviceMemory stagingBufMem{nullptr};
-    if(!createBuf(
-      bufSize,
-      vk::BufferUsageFlagBits::eTransferSrc,
-      vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-      stagingBuf,
-      stagingBufMem
-    )) return false;
-    
-    void* dataStaging = stagingBufMem.mapMemory(0, bufSize);
-    memcpy(dataStaging, vertices.data(), bufSize);
-    stagingBufMem.unmapMemory();
-    
-    if(!createBuf(
-      bufSize,
-      vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-      vk::MemoryPropertyFlagBits::eDeviceLocal,
-      m_vertBuf,
-      m_vertBufMem
-    )) return false;
-    
-    copyBuffer(stagingBuf, m_vertBuf, bufSize);
-    
-    return true;
-  }
-  
-  bool VulkanRenderer::createIBuf() {
-    vk::DeviceSize bufSize = sizeof(indices[0]) * indices.size();
-    
-    vk::raii::Buffer stagingBuf{nullptr};
-    vk::raii::DeviceMemory stagingBufMem{nullptr};
-    if(!createBuf(
-      bufSize,
-      vk::BufferUsageFlagBits::eTransferSrc,
-      vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-      stagingBuf,
-      stagingBufMem
-    )) return false;
-    
-    void* data = stagingBufMem.mapMemory(0, bufSize);
-    memcpy(data, indices.data(), bufSize);
-    stagingBufMem.unmapMemory();
-    
-    if(!createBuf(
-      bufSize,
-      vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-      vk::MemoryPropertyFlagBits::eDeviceLocal,
-      m_indBuf,
-      m_indBufMem
-    )) return false;
-    
-    copyBuffer(stagingBuf, m_indBuf, bufSize);
-    
-    return true;
-  }
-  
-  bool VulkanRenderer::createUBufs() {
-    m_uniformBufs.clear();
-    m_uniformBufsMem.clear();
-    m_uniformBufsMapped.clear();
-    
-    for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-      vk::DeviceSize bufSize = sizeof(UniformBufferObject);
-      vk::raii::Buffer buf{nullptr};
-      vk::raii::DeviceMemory bufMem{nullptr};
-      if(!createBuf(
-        bufSize,
-        vk::BufferUsageFlagBits::eUniformBuffer,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-        buf,
-        bufMem
-      )) return false;
-      m_uniformBufs.emplace_back(std::move(buf));
-      m_uniformBufsMem.emplace_back(std::move(bufMem));
-      m_uniformBufsMapped.emplace_back(m_uniformBufsMem[i].mapMemory(0, bufSize));
-    }
-    
-    return true;
-  }
-  
   bool VulkanRenderer::createDescPool() {
     
     std::array<vk::DescriptorPoolSize, 2> poolSize = {
@@ -1197,8 +1013,6 @@ namespace V {
         .descriptorCount = MAX_FRAMES_IN_FLIGHT
       }
     };
-    
-    
     
     vk::DescriptorPoolCreateInfo poolInfo{
       .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
@@ -1240,7 +1054,7 @@ namespace V {
 
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
       vk::DescriptorBufferInfo bufInfo{
-        .buffer = m_uniformBufs[i],
+        .buffer = m_buf.getUBufs()[i],
         .offset = 0,
         .range = sizeof(UniformBufferObject)
       };

@@ -4,6 +4,7 @@ add_library(${MODULE} STATIC
   vk_renderer.cpp
   vk_swapchain.cpp
   vk_pipeline.cpp
+  vk_buffer.cpp
 )
 
 target_include_directories(${MODULE} PUBLIC
