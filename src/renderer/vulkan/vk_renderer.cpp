@@ -1,6 +1,4 @@
 #include "vk_renderer.hpp"
-#include "vk_vertex.hpp"
-#include "vk_ubo.hpp"
 
 #include "../../core/window.hpp"
 #define GLFW_EXPOSE_NATIVE_WIN32
@@ -9,6 +7,25 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+
+
+const std::vector<V::Vertex> vertices = {
+  {{-0.5f, -0.5f, 0.f}, {1.f, 0.f, 0.f}, {1.f, 0.f}},
+  {{0.5f, -0.5f, 0.f}, {0.f, 1.f, 0.f}, {0.f, 0.f}},
+  {{0.5f, 0.5f, 0.f}, {0.f, 0.f, 1.f}, {0.f, 1.f}},
+  {{-0.5f, 0.5f, 0.f}, {1.f, 1.f, 1.f}, {1.f, 1.f}},
+  
+  {{-0.5f, -0.5f, -0.5f}, {1.f, 0.f, 0.f}, {1.f, 0.f}},
+  {{0.5f, -0.5f, -0.5f}, {0.f, 1.f, 0.f}, {0.f, 0.f}},
+  {{0.5f, 0.5f, -0.5f}, {0.f, 0.f, 1.f}, {0.f, 1.f}},
+  {{-0.5f, 0.5f, -0.5f}, {1.f, 1.f, 1.f}, {1.f, 1.f}}
+};
+
+const std::vector<uint32_t> indices = {
+  0, 1, 2, 2, 3, 0,
+  4, 5, 6, 6, 7, 4
+};
+
 
 
 namespace V {
@@ -134,10 +151,9 @@ namespace V {
     m_cmdBufs[m_curFrame].setViewport(0, vk::Viewport(0.f, 0.f, static_cast<float>(m_sc.getExtent().width), static_cast<float>(m_sc.getExtent().height), 0.f, 1.f));
     m_cmdBufs[m_curFrame].setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), m_sc.getExtent()));
     
-    m_cmdBufs[m_curFrame].bindVertexBuffers(0, *m_buf.getVBuf(), {0});
-    m_cmdBufs[m_curFrame].bindIndexBuffer(*m_buf.getIBuf(), 0, vk::IndexType::eUint16);
+    m_mesh.bind(m_cmdBufs[m_curFrame]);
     m_cmdBufs[m_curFrame].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline.getPipLayout(), 0, *(m_descSets[m_curFrame]), nullptr);
-    m_cmdBufs[m_curFrame].drawIndexed(indices.size(), 1, 0, 0, 0);
+    m_cmdBufs[m_curFrame].drawIndexed(m_mesh.getIndexCount(), 1, 0, 0, 0);
     
     m_cmdBufs[m_curFrame].endRendering();
     
@@ -185,7 +201,15 @@ namespace V {
     }
     m_imagesInFlight[imgIndex] = *m_inFlightFences[m_curFrame];
     
-    m_buf.updUBO();
+    static auto startTime = std::chrono::high_resolution_clock::now();
+    auto curTime = std::chrono::high_resolution_clock::now();
+    float time = std::chrono::duration<float, std::chrono::seconds::period>(curTime - startTime).count();
+    
+    glm::mat4 model = glm::rotate(glm::mat4(1.f), time * glm::radians(30.f), glm::vec3(0.f, 0.f, 1.f));
+    glm::mat4 view = glm::lookAt(glm::vec3(2.f, 2.f, 2.f), glm::vec3(0.f, 0.f, 0.f), glm::vec3(0.f, 0.f, 1.f));
+    glm::mat4 proj = glm::perspective(glm::radians(45.f), static_cast<float>(m_sc.getExtent().width) / static_cast<float>(m_sc.getExtent().height), 0.1f, 10.f);
+    
+    m_vubo.updUBO(model, view, proj, m_curFrame);
     
     m_logDev.resetFences(*m_inFlightFences[m_curFrame]);
     m_cmdBufs[m_curFrame].reset();
@@ -301,7 +325,7 @@ namespace V {
     vk::MemoryRequirements memReq = image.getMemoryRequirements();
     uint32_t typeIndex = 0;
     {
-      auto res = m_buf.findMemType(memReq.memoryTypeBits, props);
+      auto res = findMemType(memReq.memoryTypeBits, props, m_physDev);
       if(!res) {
         Logger::error("Failed to find suitable memory type");
         return false;
@@ -341,7 +365,7 @@ namespace V {
     bool useTemp = (cmdBuf == nullptr);
     
     if(useTemp) {
-      if(!m_buf.beginSingleTimeComs(tempCmdBuf)) return false;
+      if(!beginSingleTimeComs(tempCmdBuf, m_logDev, m_cmdPool)) return false;
       cmdBuf = &tempCmdBuf;
     }
 
@@ -404,7 +428,7 @@ namespace V {
 
     // Завершаем временный командный буфер если он использовался
     if(useTemp) {
-      if(!m_buf.endSingleTimeComs(tempCmdBuf)) return false;
+      if(!endSingleTimeComs(tempCmdBuf, m_graphQ)) return false;
     }
     
     return true;
@@ -412,7 +436,7 @@ namespace V {
   
   bool VulkanRenderer::copyBufToImg(const vk::raii::Buffer& buf, vk::raii::Image& img, uint32_t w, uint32_t h) {
     vk::raii::CommandBuffer cmdBuf{nullptr};
-    if(!m_buf.beginSingleTimeComs(cmdBuf)) return false;
+    if(!beginSingleTimeComs(cmdBuf, m_logDev, m_cmdPool)) return false;
     
     vk::BufferImageCopy region{
       .bufferOffset = 0,
@@ -425,7 +449,7 @@ namespace V {
     
     cmdBuf.copyBufferToImage(buf, img, vk::ImageLayout::eTransferDstOptimal, {region});
     
-    if(!m_buf.endSingleTimeComs(cmdBuf)) return false;
+    if(!endSingleTimeComs(cmdBuf, m_graphQ)) return false;
     
     return true;
   }
@@ -505,7 +529,8 @@ namespace V {
         || !createGraphPipeline()
         || !createCmdPool()
         
-        || !createBuffer()
+        || !createUBO()
+        || !createMesh()
         
         || !createDepthRes()
         || !createTextureImg()
@@ -880,16 +905,22 @@ namespace V {
     return true;
   }
   
-  bool VulkanRenderer::createBuffer() {
+  bool VulkanRenderer::createUBO() {
     
-    if(!m_buf.init(m_physDev, m_logDev, m_sc, m_cmdPool, m_graphQ, m_curFrame)) {
-      Logger::error("Failed to init buffer helper");
+    if(!m_vubo.init(m_physDev, m_logDev)) {
+      Logger::error("Failed to init ubo");
       return false;
     }
-
-		m_buf.createVBuf();
-		m_buf.createIBuf();
-		m_buf.createUBufs();
+    
+    return true;
+  }
+  
+  bool VulkanRenderer::createMesh() {
+    
+    if(!m_mesh.init(vertices, indices, m_physDev, m_logDev, m_cmdPool, m_graphQ)) {
+      Logger::error("Failed to init mesh");
+      return false;
+    }
     
     return true;
   }
@@ -929,12 +960,14 @@ namespace V {
     vk::raii::Buffer stagingBuf({nullptr});
     vk::raii::DeviceMemory stagingBufMem({nullptr});
     
-    if(!m_buf.createBuf(
+    if(!createBuf(
       imgSize,
       vk::BufferUsageFlagBits::eTransferSrc,
       vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
       stagingBuf,
-      stagingBufMem
+      stagingBufMem,
+      m_physDev,
+      m_logDev
     )) return false;
     void* data = stagingBufMem.mapMemory(0, imgSize);
     memcpy(data, pixels, imgSize);
@@ -1054,7 +1087,7 @@ namespace V {
 
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
       vk::DescriptorBufferInfo bufInfo{
-        .buffer = m_buf.getUBufs()[i],
+        .buffer = m_vubo.getUBufs()[i],
         .offset = 0,
         .range = sizeof(UniformBufferObject)
       };

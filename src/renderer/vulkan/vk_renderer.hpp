@@ -1,9 +1,9 @@
 #pragma once
 
-#include "vk_types.hpp"
 #include "vk_swapchain.hpp"
 #include "vk_pipeline.hpp"
-#include "vk_buffer.hpp"
+#include "vk_ubo.hpp"
+#include "vk_mesh.hpp"
 
 #include <expected>
 
@@ -62,7 +62,8 @@ namespace V {
     bool createGraphPipeline();
     bool createCmdPool();
     
-    bool createBuffer();
+    bool createUBO();
+    bool createMesh();
     
     bool createDepthRes();
     bool createTextureImg();
@@ -145,7 +146,8 @@ namespace V {
     std::vector<vk::Fence> m_imagesInFlight;
     std::vector<vk::raii::DescriptorSet> m_descSets;
     
-    VulkanBuffer m_buf;
+    VulkanMesh m_mesh;
+    VulkanUBO m_vubo;
     VulkanSwapchain m_sc;
     VulkanPipeline m_pipeline;
     
