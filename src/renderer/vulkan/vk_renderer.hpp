@@ -147,7 +147,8 @@ namespace V {
     std::vector<vk::raii::DescriptorSet> m_descSets;
     
     VulkanMesh m_mesh;
-    VulkanUBO m_vubo;
+    UBOManager<CameraData> m_cameraUBO;
+    UBOManager<ObjectData> m_objectUBO;
     VulkanSwapchain m_sc;
     VulkanPipeline m_pipeline;
     

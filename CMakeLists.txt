@@ -27,7 +27,7 @@ function (add_slang_shader_target TARGET)
   add_custom_command(
     OUTPUT  ${FINAL_SHADER_PATH}
 
-    COMMAND ${SLANGC_EXECUTABLE} ${SHADER_SOURCES} -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name ${ENTRY_POINTS} -o ${FINAL_SHADER_PATH}
+    COMMAND ${SLANGC_EXECUTABLE} ${SHADER_SOURCES} -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name ${ENTRY_POINTS} -fvk-b-shift 0 0 -fvk-t-shift 0 0 -fvk-s-shift 0 0 -o ${FINAL_SHADER_PATH}
     
     DEPENDS ${SHADER_SOURCES}
     
