@@ -4,12 +4,17 @@ struct VSInput {
     float2 inTexCoord;
 };
 
-struct UniformBuf {
-    float4x4 model;
+struct CameraData {
     float4x4 view;
     float4x4 proj;
+}
+
+struct ObjectData {
+    float4x4 model;
 };
-ConstantBuffer<UniformBuf> ubo;
+
+ConstantBuffer<CameraData> camera : register(b0);
+ConstantBuffer<ObjectData> object : register(b2);
 
 struct VSOutput {
     float4 pos : SV_Position;
@@ -20,15 +25,16 @@ struct VSOutput {
 [shader("vertex")]
 VSOutput vertMain(VSInput input) {
     VSOutput output;
-    output.pos = mul(ubo.proj, mul(ubo.view, mul(ubo.model, float4(input.inPos, 1.f))));
+    output.pos = mul(camera.proj, mul(camera.view, mul(object.model, float4(input.inPos, 1.f))));
     output.clr = input.inClr;
     output.texCoord = input.inTexCoord;
     return output;
 }
 
-Sampler2D texture;
+Texture2D texture : register(t1);
+SamplerState sampler : register(s1);
 
 [shader("fragment")]
 float4 fragMain(VSOutput inVert) : SV_Target {
-    return texture.Sample(inVert.texCoord);
+    return texture.Sample(sampler, inVert.texCoord);
 }

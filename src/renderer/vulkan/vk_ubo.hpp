@@ -4,36 +4,31 @@
 
 namespace V {
   
-  struct UniformBufferObject {
-    alignas(16) glm::mat4 model;
+  struct CameraData {
     alignas(16) glm::mat4 view;
     alignas(16) glm::mat4 proj;
   };
+
+  struct ObjectData {
+    alignas(16) glm::mat4 model;
+  };
   
-  class VulkanUBO {
+  template<typename T>
+  class UBOManager {
   public:
     
-    VulkanUBO() {}
-    ~VulkanUBO() {}
+    UBOManager() {}
+    ~UBOManager() {}
     
     bool init(vk::raii::PhysicalDevice& pDev, vk::raii::Device& lDev) {
       if(!createUBufs(pDev, lDev)) return false;
-      
       return true;
     }
     
     std::vector<vk::raii::Buffer>& getUBufs() { return m_uniformBufs; }
     
-    void updUBO(const glm::mat4& model, const glm::mat4& view, const glm::mat4& proj, uint32_t curFrame) {
-      
-      UniformBufferObject ubo{};
-      ubo.model = model;
-      ubo.view = view;
-      ubo.proj = proj;
-      
-      ubo.proj[1][1] *= -1;
-      
-      memcpy(m_uniformBufsMapped[curFrame], &ubo, sizeof(ubo));
+    void update(const T& data, uint32_t curFrame) {
+      memcpy(m_uniformBufsMapped[curFrame], &data, sizeof(T));
     }
     
   private:
@@ -43,7 +38,7 @@ namespace V {
       m_uniformBufsMapped.clear();
       
       for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        vk::DeviceSize bufSize = sizeof(UniformBufferObject);
+        vk::DeviceSize bufSize = sizeof(T);
         vk::raii::Buffer buf{nullptr};
         vk::raii::DeviceMemory bufMem{nullptr};
         if(!createBuf(
@@ -70,4 +65,4 @@ namespace V {
     
   };
   
-}; //V
+};

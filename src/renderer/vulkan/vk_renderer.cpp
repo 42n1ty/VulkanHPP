@@ -205,11 +205,18 @@ namespace V {
     auto curTime = std::chrono::high_resolution_clock::now();
     float time = std::chrono::duration<float, std::chrono::seconds::period>(curTime - startTime).count();
     
-    glm::mat4 model = glm::rotate(glm::mat4(1.f), time * glm::radians(30.f), glm::vec3(0.f, 0.f, 1.f));
-    glm::mat4 view = glm::lookAt(glm::vec3(2.f, 2.f, 2.f), glm::vec3(0.f, 0.f, 0.f), glm::vec3(0.f, 0.f, 1.f));
-    glm::mat4 proj = glm::perspective(glm::radians(45.f), static_cast<float>(m_sc.getExtent().width) / static_cast<float>(m_sc.getExtent().height), 0.1f, 10.f);
+    // MATRICES==================================================
+    ObjectData objData{};
+    objData.model = glm::rotate(glm::mat4(1.f), time * glm::radians(30.f), glm::vec3(0.f, 0.f, 1.f));
     
-    m_vubo.updUBO(model, view, proj, m_curFrame);
+    CameraData camData{};
+    camData.view = glm::lookAt(glm::vec3(2.f, 2.f, 2.f), glm::vec3(0.f, 0.f, 0.f), glm::vec3(0.f, 0.f, 1.f));
+    camData.proj = glm::perspective(glm::radians(45.f), static_cast<float>(m_sc.getExtent().width) / static_cast<float>(m_sc.getExtent().height), 0.1f, 10.f);
+    camData.proj[1][1] *= -1; // reverse
+    
+    m_objectUBO.update(objData, m_curFrame);
+    m_cameraUBO.update(camData, m_curFrame);
+    // MATRICES==================================================
     
     m_logDev.resetFences(*m_inFlightFences[m_curFrame]);
     m_cmdBufs[m_curFrame].reset();
@@ -523,7 +530,7 @@ namespace V {
         || !createSurf(wnd)
         || !pickPhysDev()
         || !createLogDev()
-        || ! createSwapchain(wnd)
+        || !createSwapchain(wnd)
         || !createImgViews()
         || !createDescSetLayout()
         || !createGraphPipeline()
@@ -839,7 +846,8 @@ namespace V {
   
   bool VulkanRenderer::createDescSetLayout() {
     
-    std::array<vk::DescriptorSetLayoutBinding, 2> bindings = {
+    std::array<vk::DescriptorSetLayoutBinding, 3> bindings = {
+      // binding 0: camera ubo
       vk::DescriptorSetLayoutBinding{
         .binding = 0,
         .descriptorType = vk::DescriptorType::eUniformBuffer,
@@ -847,11 +855,20 @@ namespace V {
         .stageFlags = vk::ShaderStageFlagBits::eVertex,
         .pImmutableSamplers = nullptr
       },
+      // binding 1: texture sampler
       vk::DescriptorSetLayoutBinding{
         .binding = 1,
         .descriptorType = vk::DescriptorType::eCombinedImageSampler,
         .descriptorCount = 1,
         .stageFlags = vk::ShaderStageFlagBits::eFragment,
+        .pImmutableSamplers = nullptr
+      },
+      // binding 2: object ubo
+      vk::DescriptorSetLayoutBinding{
+        .binding = 2,
+        .descriptorType = vk::DescriptorType::eUniformBuffer,
+        .descriptorCount = 1,
+        .stageFlags = vk::ShaderStageFlagBits::eVertex,
         .pImmutableSamplers = nullptr
       }
     };
@@ -907,8 +924,12 @@ namespace V {
   
   bool VulkanRenderer::createUBO() {
     
-    if(!m_vubo.init(m_physDev, m_logDev)) {
-      Logger::error("Failed to init ubo");
+    if(!m_cameraUBO.init(m_physDev, m_logDev)) {
+      Logger::error("Failed to init camera ubo");
+      return false;
+    }
+    if(!m_objectUBO.init(m_physDev, m_logDev)) {
+      Logger::error("Failed to init camera ubo");
       return false;
     }
     
@@ -1039,7 +1060,7 @@ namespace V {
     std::array<vk::DescriptorPoolSize, 2> poolSize = {
       vk::DescriptorPoolSize{
         .type = vk::DescriptorType::eUniformBuffer,
-        .descriptorCount = MAX_FRAMES_IN_FLIGHT
+        .descriptorCount = 2 * MAX_FRAMES_IN_FLIGHT // now two ubos per frame
       },
       vk::DescriptorPoolSize{
         .type = vk::DescriptorType::eCombinedImageSampler,
@@ -1086,36 +1107,50 @@ namespace V {
     }
 
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-      vk::DescriptorBufferInfo bufInfo{
-        .buffer = m_vubo.getUBufs()[i],
+      vk::DescriptorBufferInfo cameraBufInfo{ // binding 0
+        .buffer = m_cameraUBO.getUBufs()[i],
         .offset = 0,
-        .range = sizeof(UniformBufferObject)
+        .range = sizeof(CameraData)
+      };
+      vk::DescriptorBufferInfo objectBufInfo{ // binding 2
+        .buffer = m_objectUBO.getUBufs()[i],
+        .offset = 0,
+        .range = sizeof(ObjectData)
       };
       
-      vk::DescriptorImageInfo imgInfo{
+      vk::DescriptorImageInfo imgInfo{ // binding 1 (texture)
         .sampler = m_texSampler,
         .imageView = m_texImgView,
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
       };
       
-      std::array<vk::WriteDescriptorSet, 2> descWrites = {
+      std::array<vk::WriteDescriptorSet, 3> descWrites = {
         vk::WriteDescriptorSet {
           .dstSet = m_descSets[i],
-          .dstBinding = 0,
+          .dstBinding = 0, // binding 0
           .dstArrayElement = 0,
           .descriptorCount = 1,
           .descriptorType = vk::DescriptorType::eUniformBuffer,
           .pImageInfo = nullptr,
-          .pBufferInfo = &bufInfo
+          .pBufferInfo = &cameraBufInfo
         },
         vk::WriteDescriptorSet {
           .dstSet = m_descSets[i],
-          .dstBinding = 1,
+          .dstBinding = 1, // binding 1
           .dstArrayElement = 0,
           .descriptorCount = 1,
           .descriptorType = vk::DescriptorType::eCombinedImageSampler,
           .pImageInfo = &imgInfo,
           .pBufferInfo = nullptr
+        },
+        vk::WriteDescriptorSet {
+          .dstSet = m_descSets[i],
+          .dstBinding = 2, // binding 2
+          .dstArrayElement = 0,
+          .descriptorCount = 1,
+          .descriptorType = vk::DescriptorType::eUniformBuffer,
+          .pImageInfo = nullptr,
+          .pBufferInfo = &objectBufInfo
         }
       };
       
