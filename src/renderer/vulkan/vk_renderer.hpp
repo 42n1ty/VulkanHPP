@@ -4,6 +4,7 @@
 #include "vk_pipeline.hpp"
 #include "vk_ubo.hpp"
 #include "vk_mesh.hpp"
+#include "vk_texture.hpp"
 
 #include <expected>
 
@@ -66,9 +67,8 @@ namespace V {
     bool createMesh();
     
     bool createDepthRes();
-    bool createTextureImg();
-    bool createTextureImgView();
-    bool createTextureSampler();
+    
+    bool createTexture();
     
     bool createDescPool();
     bool createDescSets();
@@ -82,28 +82,28 @@ namespace V {
     void recordCmdBuf(uint32_t index);
     void recreateSC();
     void cleanupSC();
-    bool createImage(
-      uint32_t w,
-      uint32_t h,
-      vk::Format format,
-      vk::ImageTiling tiling,
-      vk::ImageUsageFlags usage,
-      vk::MemoryPropertyFlags props,
-      vk::raii::Image& image,
-      vk::raii::DeviceMemory& imageMem
-    );
-    bool transitionImageLayout(
-      const vk::Image& image,
-      vk::ImageLayout oldLayout,
-      vk::ImageLayout newLayout,
-      vk::AccessFlags2 srcAccessMask = {},
-      vk::AccessFlags2 dstAccessMask = {},
-      vk::PipelineStageFlags2 srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
-      vk::PipelineStageFlags2 dstStageMask = vk::PipelineStageFlagBits2::eBottomOfPipe,
-      vk::raii::CommandBuffer* cmdBuf = nullptr
-    );
-    bool copyBufToImg(const vk::raii::Buffer& buf, vk::raii::Image& img, uint32_t w, uint32_t h);
-    bool createImgView(const vk::Image& img, vk::Format format, vk::ImageAspectFlags aspectFlags, vk::raii::ImageView& iv);
+    // bool createImage(
+    //   uint32_t w,
+    //   uint32_t h,
+    //   vk::Format format,
+    //   vk::ImageTiling tiling,
+    //   vk::ImageUsageFlags usage,
+    //   vk::MemoryPropertyFlags props,
+    //   vk::raii::Image& image,
+    //   vk::raii::DeviceMemory& imageMem
+    // );
+    // bool transitionImageLayout(
+    //   const vk::Image& image,
+    //   vk::ImageLayout oldLayout,
+    //   vk::ImageLayout newLayout,
+    //   vk::AccessFlags2 srcAccessMask = {},
+    //   vk::AccessFlags2 dstAccessMask = {},
+    //   vk::PipelineStageFlags2 srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
+    //   vk::PipelineStageFlags2 dstStageMask = vk::PipelineStageFlagBits2::eBottomOfPipe,
+    //   vk::raii::CommandBuffer* cmdBuf = nullptr
+    // );
+    // bool copyBufToImg(const vk::raii::Buffer& buf, vk::raii::Image& img, uint32_t w, uint32_t h);
+    // bool createImgView(const vk::Image& img, vk::Format format, vk::ImageAspectFlags aspectFlags, vk::raii::ImageView& iv);
     bool findSupFormat(vk::Format& format, const std::vector<vk::Format>& candidates, vk::ImageTiling tiling, vk::FormatFeatureFlags features);
     bool findDepthFormat(vk::Format& format);
     // HELPERS FUNCS====================================================================================================
@@ -130,11 +130,6 @@ namespace V {
     vk::raii::DescriptorSetLayout m_descSetLayout{nullptr};
     vk::raii::DescriptorPool m_descPool{nullptr};
     
-    vk::raii::Image m_texImg{nullptr};
-    vk::raii::DeviceMemory m_texImgMem{nullptr};
-    vk::raii::ImageView m_texImgView{nullptr};
-    vk::raii::Sampler m_texSampler{nullptr};
-    
     vk::raii::Image m_depthImg{nullptr};
     vk::raii::DeviceMemory m_depthImgMem{nullptr};
     vk::raii::ImageView m_depthImgView{nullptr};
@@ -147,8 +142,12 @@ namespace V {
     std::vector<vk::raii::DescriptorSet> m_descSets;
     
     VulkanMesh m_mesh;
+    
     UBOManager<CameraData> m_cameraUBO;
     UBOManager<ObjectData> m_objectUBO;
+    
+    VulkanTexture m_texture;
+    
     VulkanSwapchain m_sc;
     VulkanPipeline m_pipeline;
     

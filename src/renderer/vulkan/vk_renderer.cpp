@@ -5,8 +5,7 @@
 #include <GLFW/glfw3native.h>
 #include "../../tools/logger/logger.hpp"
 
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
+  // "../../assets/textures/txtr.jpg"
 
 
 const std::vector<V::Vertex> vertices = {
@@ -84,6 +83,9 @@ namespace V {
     m_cmdBufs[m_curFrame].begin({});
     
     transitionImageLayout(
+      m_logDev,
+      m_cmdPool,
+      m_graphQ,
       m_sc.getImgs()[index],
       vk::ImageLayout::eUndefined,
       vk::ImageLayout::eColorAttachmentOptimal,
@@ -158,6 +160,9 @@ namespace V {
     m_cmdBufs[m_curFrame].endRendering();
     
     transitionImageLayout(
+      m_logDev,
+      m_cmdPool,
+      m_graphQ,
       m_sc.getImgs()[index],
       vk::ImageLayout::eColorAttachmentOptimal,
       vk::ImageLayout::ePresentSrcKHR,
@@ -296,192 +301,6 @@ namespace V {
     }
   }
   
-  bool VulkanRenderer::createImage(
-    uint32_t w,
-    uint32_t h,
-    vk::Format format,
-    vk::ImageTiling tiling,
-    vk::ImageUsageFlags usage,
-    vk::MemoryPropertyFlags props,
-    vk::raii::Image& image,
-    vk::raii::DeviceMemory& imageMem
-  ) {
-    
-    vk::ImageCreateInfo imgInfo{
-      .imageType = vk::ImageType::e2D,
-      .format = format,
-      .extent = vk::Extent3D{w, h, 1},
-      .mipLevels = 1,
-      .arrayLayers = 1,
-      .samples = vk::SampleCountFlagBits::e1,
-      .tiling = tiling,
-      .usage = usage,
-      .sharingMode = vk::SharingMode::eExclusive,
-      .initialLayout = vk::ImageLayout::eUndefined
-    };
-    
-    {
-      auto res = m_logDev.createImage(imgInfo);
-      if(!res) {
-        Logger::error("Failed to create image: {}", vk::to_string(res.error()));
-        return false;
-      }
-      image = std::move(res.value());
-    }
-    
-    vk::MemoryRequirements memReq = image.getMemoryRequirements();
-    uint32_t typeIndex = 0;
-    {
-      auto res = findMemType(memReq.memoryTypeBits, props, m_physDev);
-      if(!res) {
-        Logger::error("Failed to find suitable memory type");
-        return false;
-      }
-      typeIndex = res.value();
-    }
-    vk::MemoryAllocateInfo allocInfo{
-      .allocationSize = memReq.size,
-      .memoryTypeIndex = typeIndex
-    };
-    
-    {
-      auto res = m_logDev.allocateMemory(allocInfo);
-      if(!res) {
-        Logger::error("Failed to allocate image memory: {}", vk::to_string(res.error()));
-        return false;
-      }
-      imageMem = std::move(res.value());
-    }
-    image.bindMemory(imageMem, 0);
-    
-    return true;
-  }
-  
-  bool VulkanRenderer::transitionImageLayout(
-    const vk::Image& image,
-    vk::ImageLayout oldLayout,
-    vk::ImageLayout newLayout,
-    vk::AccessFlags2 srcAccessMask,
-    vk::AccessFlags2 dstAccessMask,
-    vk::PipelineStageFlags2 srcStageMask,
-    vk::PipelineStageFlags2 dstStageMask,
-    vk::raii::CommandBuffer* cmdBuf
-  ) {
-    
-    vk::raii::CommandBuffer tempCmdBuf{nullptr};
-    bool useTemp = (cmdBuf == nullptr);
-    
-    if(useTemp) {
-      if(!beginSingleTimeComs(tempCmdBuf, m_logDev, m_cmdPool)) return false;
-      cmdBuf = &tempCmdBuf;
-    }
-
-    vk::ImageMemoryBarrier2 barrier{
-      .srcStageMask = srcStageMask,
-      .srcAccessMask = srcAccessMask,
-      .dstStageMask = dstStageMask,
-      .dstAccessMask = dstAccessMask,
-      .oldLayout = oldLayout,
-      .newLayout = newLayout,
-      .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-      .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-      .image = image,
-      .subresourceRange = {
-        .aspectMask = vk::ImageAspectFlagBits::eColor,
-        .baseMipLevel = 0,
-        .levelCount = 1,
-        .baseArrayLayer = 0,
-        .layerCount = 1
-      }
-    };
-
-    // Обработка специальных случаев переходов
-    if(oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eTransferDstOptimal) {
-      barrier.srcAccessMask = {};
-      barrier.dstAccessMask = vk::AccessFlagBits2::eTransferWrite;
-      barrier.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe;
-      barrier.dstStageMask = vk::PipelineStageFlagBits2::eTransfer;
-    } 
-    else if(oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal) {
-      barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
-      barrier.dstAccessMask = vk::AccessFlagBits2::eShaderRead;
-      barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
-      barrier.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader;
-    }
-    else if(oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eColorAttachmentOptimal) {
-      barrier.srcAccessMask = srcAccessMask;
-      barrier.dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite;
-      barrier.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe;
-      barrier.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
-    }
-    else if(oldLayout == vk::ImageLayout::eColorAttachmentOptimal && newLayout == vk::ImageLayout::ePresentSrcKHR) {
-      barrier.srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite;
-      barrier.dstAccessMask = {};
-      barrier.srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
-      barrier.dstStageMask = vk::PipelineStageFlagBits2::eBottomOfPipe;
-    }
-    else {
-      Logger::error("Unsupported layout transition from {} to {}", vk::to_string(oldLayout), vk::to_string(newLayout));
-      return false;
-    }
-
-    vk::DependencyInfo dependInfo{
-      .dependencyFlags = {},
-      .imageMemoryBarrierCount = 1,
-      .pImageMemoryBarriers = &barrier
-    };
-
-    cmdBuf->pipelineBarrier2(dependInfo);
-
-    // Завершаем временный командный буфер если он использовался
-    if(useTemp) {
-      if(!endSingleTimeComs(tempCmdBuf, m_graphQ)) return false;
-    }
-    
-    return true;
-  }
-  
-  bool VulkanRenderer::copyBufToImg(const vk::raii::Buffer& buf, vk::raii::Image& img, uint32_t w, uint32_t h) {
-    vk::raii::CommandBuffer cmdBuf{nullptr};
-    if(!beginSingleTimeComs(cmdBuf, m_logDev, m_cmdPool)) return false;
-    
-    vk::BufferImageCopy region{
-      .bufferOffset = 0,
-      .bufferRowLength = 0,
-      .bufferImageHeight = 0,
-      .imageSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
-      .imageOffset = {0, 0, 0},
-      .imageExtent = {w, h, 1}
-    };
-    
-    cmdBuf.copyBufferToImage(buf, img, vk::ImageLayout::eTransferDstOptimal, {region});
-    
-    if(!endSingleTimeComs(cmdBuf, m_graphQ)) return false;
-    
-    return true;
-  }
-  
-  bool VulkanRenderer::createImgView(const vk::Image& img, vk::Format format, vk::ImageAspectFlags aspectFlags, vk::raii::ImageView& iv) {
-    
-    vk::ImageViewCreateInfo viewInfo{
-      .flags = {},
-      .image = img,
-      .viewType = vk::ImageViewType::e2D,
-      .format = format,
-      .components = {},
-      .subresourceRange = { aspectFlags, 0, 1, 0, 1 }
-    };
-    
-    auto res = m_logDev.createImageView(viewInfo);
-    if(!res) {
-      Logger::error("Failed to create image view: {}", vk::to_string(res.error()));
-      return false;
-    }
-    iv = std::move(res.value());
-    
-    return true;
-  }
-  
   bool VulkanRenderer::findSupFormat(
     vk::Format& format,
     const std::vector<vk::Format>& candidates,
@@ -540,9 +359,8 @@ namespace V {
         || !createMesh()
         
         || !createDepthRes()
-        || !createTextureImg()
-        || !createTextureImgView()
-        || !createTextureSampler()
+        
+        || !createTexture()
         
         || !createDescPool()
         || !createDescSets()
@@ -834,7 +652,7 @@ namespace V {
     for(auto& img : m_sc.getImgs()) {
       vk::raii::ImageView temp{nullptr};
       
-      if(!createImgView(img, m_sc.getFormat(), vk::ImageAspectFlagBits::eColor, temp)) {
+      if(!createImgView(img, m_sc.getFormat(), vk::ImageAspectFlagBits::eColor, temp, m_logDev)) {
         return false;
       }
       
@@ -946,6 +764,24 @@ namespace V {
     return true;
   }
   
+  bool VulkanRenderer::createTexture() {
+    
+    std::string_view path("../../assets/textures/txtr.jpg");
+    
+    if(!m_texture.init(
+      path,
+      m_physDev,
+      m_logDev,
+      m_cmdPool,
+      m_graphQ
+    )) {
+      Logger::error("Failed to init texture");
+      return false;
+    }
+    
+    return true;
+  }
+  
   bool VulkanRenderer::createDepthRes() {
     
     vk::Format depthFormat;
@@ -959,98 +795,12 @@ namespace V {
           vk::ImageUsageFlagBits::eDepthStencilAttachment,
           vk::MemoryPropertyFlagBits::eDeviceLocal,
           m_depthImg,
-          m_depthImgMem
+          m_depthImgMem,
+          m_physDev,
+          m_logDev
         )
     ) return false;
-    if(!createImgView(m_depthImg, depthFormat, vk::ImageAspectFlagBits::eDepth, m_depthImgView)) return false;
-    
-    return true;
-  }
-  
-  bool VulkanRenderer::createTextureImg() {
-    
-    int texWidth, texHeight, texChannels;
-    stbi_uc* pixels = stbi_load("../../assets/textures/txtr.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-    vk::DeviceSize imgSize = texWidth * texHeight * 4;
-    
-    if(!pixels) {
-      Logger::error("Failed to load texture image");
-      return false;
-    }
-    
-    vk::raii::Buffer stagingBuf({nullptr});
-    vk::raii::DeviceMemory stagingBufMem({nullptr});
-    
-    if(!createBuf(
-      imgSize,
-      vk::BufferUsageFlagBits::eTransferSrc,
-      vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-      stagingBuf,
-      stagingBufMem,
-      m_physDev,
-      m_logDev
-    )) return false;
-    void* data = stagingBufMem.mapMemory(0, imgSize);
-    memcpy(data, pixels, imgSize);
-    stagingBufMem.unmapMemory();
-    stbi_image_free(pixels);
-    
-    if(!createImage(
-      texWidth,
-      texHeight,
-      vk::Format::eR8G8B8A8Srgb,
-      vk::ImageTiling::eOptimal,
-      vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-      vk::MemoryPropertyFlagBits::eDeviceLocal,
-      m_texImg,
-      m_texImgMem
-    )) return false;
-    
-    if(!transitionImageLayout(m_texImg, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal)) return false;
-    if(!copyBufToImg(stagingBuf, m_texImg, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight))) return false;
-    if(!transitionImageLayout(m_texImg, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal)) return false;
-    
-    return true;
-  }
-  
-  bool VulkanRenderer::createTextureImgView() {
-    
-    if(!createImgView(*m_texImg, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, m_texImgView)) {
-      return false;
-    }
-    
-    return true;
-  }
-  
-  bool VulkanRenderer::createTextureSampler() {
-    
-    vk::PhysicalDeviceProperties props = m_physDev.getProperties();
-    
-    vk::SamplerCreateInfo samplerInfo{
-      .flags = {},
-      .magFilter = vk::Filter::eLinear,
-      .minFilter = vk::Filter::eLinear,
-      .mipmapMode = vk::SamplerMipmapMode::eLinear,
-      .addressModeU = vk::SamplerAddressMode::eRepeat,
-      .addressModeV = vk::SamplerAddressMode::eRepeat,
-      .addressModeW = vk::SamplerAddressMode::eRepeat,
-      .mipLodBias = 0.f,
-      .anisotropyEnable = 1,
-      .maxAnisotropy = props.limits.maxSamplerAnisotropy,
-      .compareEnable = vk::False,
-      .compareOp = vk::CompareOp::eAlways,
-      .minLod = 0.f,
-      .maxLod = 0.f,
-      .borderColor = vk::BorderColor::eIntOpaqueBlack,
-      .unnormalizedCoordinates = vk::False
-    };
-    
-    auto res = m_logDev.createSampler(samplerInfo);
-    if(!res) {
-      Logger::error("Failed to create texture sampler: {}", vk::to_string(res.error()));
-      return false;
-    }
-    m_texSampler = std::move(res.value());
+    if(!createImgView(m_depthImg, depthFormat, vk::ImageAspectFlagBits::eDepth, m_depthImgView, m_logDev)) return false;
     
     return true;
   }
@@ -1119,8 +869,8 @@ namespace V {
       };
       
       vk::DescriptorImageInfo imgInfo{ // binding 1 (texture)
-        .sampler = m_texSampler,
-        .imageView = m_texImgView,
+        .sampler = m_texture.getSampler(),
+        .imageView = m_texture.getImgView(),
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
       };
       
