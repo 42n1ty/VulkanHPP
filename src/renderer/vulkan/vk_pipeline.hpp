@@ -30,7 +30,7 @@ namespace V {
     VulkanPipeline();
     ~VulkanPipeline();
     
-    bool init(const vk::raii::Device&, VulkanSwapchain&, vk::raii::DescriptorSetLayout&, vk::Format, const VulkanPplConfig&);
+    bool init(const vk::raii::Device&, VulkanSwapchain&, vk::PipelineLayoutCreateInfo&, vk::Format, const VulkanPplConfig&);
     
     vk::raii::Pipeline& getPipeline() { return m_pipeline; }
     vk::raii::PipelineLayout& getPipLayout() { return m_pipelineLayout; }

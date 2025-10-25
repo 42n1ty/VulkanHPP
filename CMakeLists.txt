@@ -23,11 +23,11 @@ function (add_slang_shader_target TARGET)
   set(ENTRY_POINTS -entry vertMain -entry fragMain)
 
   file(MAKE_DIRECTORY ${SHADERS_OUTPUT_DIR})
-
+# -fvk-b-shift 0 0 -fvk-t-shift 0 0 -fvk-s-shift 0 0 
   add_custom_command(
     OUTPUT  ${FINAL_SHADER_PATH}
 
-    COMMAND ${SLANGC_EXECUTABLE} ${SHADER_SOURCES} -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name ${ENTRY_POINTS} -fvk-b-shift 0 0 -fvk-t-shift 0 0 -fvk-s-shift 0 0 -o ${FINAL_SHADER_PATH}
+    COMMAND ${SLANGC_EXECUTABLE} ${SHADER_SOURCES} -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name ${ENTRY_POINTS} -o ${FINAL_SHADER_PATH}
     
     DEPENDS ${SHADER_SOURCES}
     
@@ -95,7 +95,7 @@ endif()
 # list(APPEND CMAKE_PREFIX_PATH "C:/Progs/vcpkg/packages/imgui_x64-windows")
 
 # find_package(imgui CONFIG REQUIRED)
-# find_package(assimp CONFIG REQUIRED)
+find_package(assimp CONFIG REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 #find_package(unofficial-shaderc CONFIG REQUIRED)

@@ -4,6 +4,8 @@
 
 namespace V {
   
+  static constexpr uint16_t MAX_BONES = 100;
+  
   static std::expected<uint32_t, std::string> findMemType(uint32_t typeFilter, vk::MemoryPropertyFlags props, vk::raii::PhysicalDevice& pDev) {
     
     vk::PhysicalDeviceMemoryProperties memProps = pDev.getMemoryProperties();

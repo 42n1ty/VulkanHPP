@@ -51,7 +51,7 @@ namespace V {
   bool VulkanPipeline::init(
     const vk::raii::Device& logDev,
     VulkanSwapchain& sc,
-    vk::raii::DescriptorSetLayout& descSetLayout,
+    vk::PipelineLayoutCreateInfo& info,
     vk::Format format,
     const VulkanPplConfig& config
   ) {
@@ -165,14 +165,8 @@ namespace V {
       .pAttachments = &clrBlendAttachment
     };
     
-    vk::PipelineLayoutCreateInfo pipLayoutInfo{
-      .setLayoutCount = 1,
-      .pSetLayouts = &*descSetLayout,
-      .pushConstantRangeCount = 0
-    };
-    
     {
-      auto res = logDev.createPipelineLayout(pipLayoutInfo);
+      auto res = logDev.createPipelineLayout(info);
       if(!res) {
         Logger::error("Failed to create pipeline layout: {}", vk::to_string(res.error()));
         return false;

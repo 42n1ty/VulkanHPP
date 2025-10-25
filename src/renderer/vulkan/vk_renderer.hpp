@@ -1,10 +1,8 @@
 #pragma once
 
 #include "vk_swapchain.hpp"
-#include "vk_pipeline.hpp"
 #include "vk_ubo.hpp"
-#include "vk_mesh.hpp"
-#include "vk_texture.hpp"
+#include "vk_model.hpp"
 
 #include <expected>
 
@@ -59,16 +57,13 @@ namespace V {
     bool createSurf(Window& wnd);
     bool createSwapchain(Window& wnd);
     bool createImgViews();
-    bool createDescSetLayout();
-    bool createGraphPipeline();
+    bool createDescSetLayouts();
     bool createCmdPool();
     
     bool createUBO();
-    bool createMesh();
+    bool createModel();
     
     bool createDepthRes();
-    
-    bool createTexture();
     
     bool createDescPool();
     bool createDescSets();
@@ -82,30 +77,6 @@ namespace V {
     void recordCmdBuf(uint32_t index);
     void recreateSC();
     void cleanupSC();
-    // bool createImage(
-    //   uint32_t w,
-    //   uint32_t h,
-    //   vk::Format format,
-    //   vk::ImageTiling tiling,
-    //   vk::ImageUsageFlags usage,
-    //   vk::MemoryPropertyFlags props,
-    //   vk::raii::Image& image,
-    //   vk::raii::DeviceMemory& imageMem
-    // );
-    // bool transitionImageLayout(
-    //   const vk::Image& image,
-    //   vk::ImageLayout oldLayout,
-    //   vk::ImageLayout newLayout,
-    //   vk::AccessFlags2 srcAccessMask = {},
-    //   vk::AccessFlags2 dstAccessMask = {},
-    //   vk::PipelineStageFlags2 srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
-    //   vk::PipelineStageFlags2 dstStageMask = vk::PipelineStageFlagBits2::eBottomOfPipe,
-    //   vk::raii::CommandBuffer* cmdBuf = nullptr
-    // );
-    // bool copyBufToImg(const vk::raii::Buffer& buf, vk::raii::Image& img, uint32_t w, uint32_t h);
-    // bool createImgView(const vk::Image& img, vk::Format format, vk::ImageAspectFlags aspectFlags, vk::raii::ImageView& iv);
-    bool findSupFormat(vk::Format& format, const std::vector<vk::Format>& candidates, vk::ImageTiling tiling, vk::FormatFeatureFlags features);
-    bool findDepthFormat(vk::Format& format);
     // HELPERS FUNCS====================================================================================================
     
     const std::vector<const char*> m_validLayers = {
@@ -127,7 +98,9 @@ namespace V {
     vk::raii::Queue m_presQ{nullptr};
     vk::raii::SurfaceKHR m_surf{nullptr};
     vk::raii::CommandPool m_cmdPool{nullptr};
-    vk::raii::DescriptorSetLayout m_descSetLayout{nullptr};
+    // vk::raii::DescriptorSetLayout m_descSetLayout{nullptr};
+    vk::raii::DescriptorSetLayout m_perFrameDescSetLayout{nullptr};
+    vk::raii::DescriptorSetLayout m_perMatDescSetLayout{nullptr};
     vk::raii::DescriptorPool m_descPool{nullptr};
     
     vk::raii::Image m_depthImg{nullptr};
@@ -139,19 +112,19 @@ namespace V {
     std::vector<vk::raii::Semaphore> m_renderFinishedSems;
     std::vector<vk::raii::Fence> m_inFlightFences;
     std::vector<vk::Fence> m_imagesInFlight;
-    std::vector<vk::raii::DescriptorSet> m_descSets;
+    std::vector<vk::raii::DescriptorSet> m_perFrameDescSets;
     
-    VulkanMesh m_mesh;
+    std::unique_ptr<VulkanModel> m_model{nullptr};
     
     UBOManager<CameraData> m_cameraUBO;
     UBOManager<ObjectData> m_objectUBO;
-    
-    VulkanTexture m_texture;
+    UBOManager<BoneData> m_bonesUBO;
     
     VulkanSwapchain m_sc;
-    VulkanPipeline m_pipeline;
     
     std::vector<vk::raii::ImageView> m_imgViews;
+    
+    std::chrono::time_point<std::chrono::high_resolution_clock> m_lastFrameTime;
     
     Window* m_wnd;
     

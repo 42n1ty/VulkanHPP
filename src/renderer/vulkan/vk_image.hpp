@@ -4,6 +4,45 @@
 
 namespace V {
   
+  static bool  findSupFormat(
+    vk::Format& format,
+    const std::vector<vk::Format>& candidates,
+    vk::ImageTiling tiling,
+    vk::FormatFeatureFlags features,
+    vk::raii::PhysicalDevice& pDev
+  ) {
+    
+    for(const auto frmt : candidates) {
+      vk::FormatProperties props = pDev.getFormatProperties(frmt);
+      
+      if(tiling == vk::ImageTiling::eLinear && (props.linearTilingFeatures & features) == features) {
+        format = frmt;
+        return true;
+      }
+      if(tiling == vk::ImageTiling::eOptimal && (props.optimalTilingFeatures & features) == features) {
+        format = frmt;
+        return true;
+      }
+    }
+    
+    Logger::error("Failed to find supported format");
+    return false;
+  }
+  
+  static bool findDepthFormat(vk::Format& format, vk::raii::PhysicalDevice& pDev) {
+    
+    if(!findSupFormat(
+          format,
+          { vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint },
+          vk::ImageTiling::eOptimal,
+          vk::FormatFeatureFlagBits::eDepthStencilAttachment,
+          pDev
+        )
+    ) return false;
+    
+    return true;
+  }
+  
   static bool createImage(
     uint32_t w,
     uint32_t h,

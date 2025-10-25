@@ -13,6 +13,10 @@ namespace V {
     alignas(16) glm::mat4 model;
   };
   
+  struct BoneData {
+    alignas(16) glm::mat4 bones[MAX_BONES];
+  };
+  
   template<typename T>
   class UBOManager {
   public:

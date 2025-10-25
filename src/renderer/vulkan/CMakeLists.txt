@@ -5,6 +5,8 @@ add_library(${MODULE} STATIC
   vk_swapchain.cpp
   vk_pipeline.cpp
   vk_texture.cpp
+  vk_model.cpp
+  vk_material.cpp
 )
 
 target_include_directories(${MODULE} PUBLIC
@@ -19,7 +21,7 @@ target_link_libraries(${MODULE} PUBLIC
 
 target_link_libraries(${MODULE} PRIVATE
 	fmt::fmt
-  
+  assimp::assimp
   Vulkan::Vulkan
   # unofficial::shaderc::shaderc
 )

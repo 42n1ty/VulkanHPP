@@ -13,7 +13,7 @@ namespace V {
     ~VulkanTexture();
     
     bool init(
-      std::string_view& path,
+      std::string& path,
       vk::raii::PhysicalDevice& pDev,
       vk::raii::Device& lDev,
       vk::raii::CommandPool& cmdPool,
@@ -23,10 +23,12 @@ namespace V {
     vk::raii::ImageView& getImgView() { return m_texImgView; }
     vk::raii::Sampler& getSampler() { return m_texSampler; }
     
+    std::string s_path;
+  
   private:
     
     bool createTextureImg(
-      std::string_view& path,
+      std::string& path,
       vk::raii::PhysicalDevice& pDev,
       vk::raii::Device& lDev,
       vk::raii::CommandPool& cmdPool,
@@ -39,7 +41,6 @@ namespace V {
       vk::raii::PhysicalDevice& pDev,
       vk::raii::Device& lDev
     );
-    
     
     vk::raii::Image m_texImg{nullptr};
     vk::raii::DeviceMemory m_texImgMem{nullptr};

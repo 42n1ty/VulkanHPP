@@ -13,7 +13,7 @@ namespace V {
   }
   
   bool VulkanTexture::init(
-    std::string_view& path,
+    std::string& path,
     vk::raii::PhysicalDevice& pDev,
     vk::raii::Device& lDev,
     vk::raii::CommandPool& cmdPool,
@@ -24,12 +24,13 @@ namespace V {
       || !createTextureSampler(pDev, lDev)
     ) return false;
     
+    s_path = path;
     return true;
   }
   
   
   bool VulkanTexture::createTextureImg(
-    std::string_view& path,
+    std::string& path,
     vk::raii::PhysicalDevice& pDev,
     vk::raii::Device& lDev,
     vk::raii::CommandPool& cmdPool,
@@ -37,6 +38,7 @@ namespace V {
   ) {
     
     int texWidth, texHeight, texChannels;
+    // Logger::debug("{}", path.data());
     stbi_uc* pixels = stbi_load(path.data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
     vk::DeviceSize imgSize = texWidth * texHeight * 4;
     

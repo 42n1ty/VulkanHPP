@@ -5,26 +5,6 @@
 #include <GLFW/glfw3native.h>
 #include "../../tools/logger/logger.hpp"
 
-  // "../../assets/textures/txtr.jpg"
-
-
-const std::vector<V::Vertex> vertices = {
-  {{-0.5f, -0.5f, 0.f}, {1.f, 0.f, 0.f}, {1.f, 0.f}},
-  {{0.5f, -0.5f, 0.f}, {0.f, 1.f, 0.f}, {0.f, 0.f}},
-  {{0.5f, 0.5f, 0.f}, {0.f, 0.f, 1.f}, {0.f, 1.f}},
-  {{-0.5f, 0.5f, 0.f}, {1.f, 1.f, 1.f}, {1.f, 1.f}},
-  
-  {{-0.5f, -0.5f, -0.5f}, {1.f, 0.f, 0.f}, {1.f, 0.f}},
-  {{0.5f, -0.5f, -0.5f}, {0.f, 1.f, 0.f}, {0.f, 0.f}},
-  {{0.5f, 0.5f, -0.5f}, {0.f, 0.f, 1.f}, {0.f, 1.f}},
-  {{-0.5f, 0.5f, -0.5f}, {1.f, 1.f, 1.f}, {1.f, 1.f}}
-};
-
-const std::vector<uint32_t> indices = {
-  0, 1, 2, 2, 3, 0,
-  4, 5, 6, 6, 7, 4
-};
-
 
 
 namespace V {
@@ -148,14 +128,16 @@ namespace V {
     };
     
     m_cmdBufs[m_curFrame].beginRendering(renderingInfo);
-    m_cmdBufs[m_curFrame].bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline.getPipeline());
     
     m_cmdBufs[m_curFrame].setViewport(0, vk::Viewport(0.f, 0.f, static_cast<float>(m_sc.getExtent().width), static_cast<float>(m_sc.getExtent().height), 0.f, 1.f));
     m_cmdBufs[m_curFrame].setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), m_sc.getExtent()));
     
-    m_mesh.bind(m_cmdBufs[m_curFrame]);
-    m_cmdBufs[m_curFrame].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline.getPipLayout(), 0, *(m_descSets[m_curFrame]), nullptr);
-    m_cmdBufs[m_curFrame].drawIndexed(m_mesh.getIndexCount(), 1, 0, 0, 0);
+    // m_cmdBufs[m_curFrame].bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline.getPipeline());
+    m_cmdBufs[m_curFrame].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_model->getPipLayout(), 0, *(m_perFrameDescSets[m_curFrame]), nullptr);
+    
+    m_model->draw(m_cmdBufs[m_curFrame]);
+    // m_mesh.bind(m_cmdBufs[m_curFrame]);
+    // m_cmdBufs[m_curFrame].drawIndexed(m_mesh.getIndexCount(), 1, 0, 0, 0);
     
     m_cmdBufs[m_curFrame].endRendering();
     
@@ -206,21 +188,33 @@ namespace V {
     }
     m_imagesInFlight[imgIndex] = *m_inFlightFences[m_curFrame];
     
-    static auto startTime = std::chrono::high_resolution_clock::now();
     auto curTime = std::chrono::high_resolution_clock::now();
-    float time = std::chrono::duration<float, std::chrono::seconds::period>(curTime - startTime).count();
+    float deltaTime = std::chrono::duration<float, std::chrono::seconds::period>(curTime - m_lastFrameTime).count();
+    m_lastFrameTime = curTime;
+    
+    if(m_model->hasAnims()) {
+      m_model->updAnim(deltaTime);
+    }
     
     // MATRICES==================================================
     ObjectData objData{};
-    objData.model = glm::rotate(glm::mat4(1.f), time * glm::radians(30.f), glm::vec3(0.f, 0.f, 1.f));
+    // objData.model = glm::rotate(glm::mat4(1.f), deltaTime * glm::radians(30.f), glm::vec3(0.f, 0.f, 1.f));
+    objData.model = glm::mat4(1.f);
+    objData.model *= m_model->getNormMatrix();
+    m_objectUBO.update(objData, m_curFrame);
     
     CameraData camData{};
-    camData.view = glm::lookAt(glm::vec3(2.f, 2.f, 2.f), glm::vec3(0.f, 0.f, 0.f), glm::vec3(0.f, 0.f, 1.f));
+    camData.view = glm::lookAt(glm::vec3(0.f, 2.f, 5.f), glm::vec3(0.f, 0.f, 0.f), glm::vec3(0.f, 1.f, 0.f));
     camData.proj = glm::perspective(glm::radians(45.f), static_cast<float>(m_sc.getExtent().width) / static_cast<float>(m_sc.getExtent().height), 0.1f, 10.f);
     camData.proj[1][1] *= -1; // reverse
-    
-    m_objectUBO.update(objData, m_curFrame);
     m_cameraUBO.update(camData, m_curFrame);
+    
+    BoneData boneData{};
+    if(m_model->hasAnims()) {
+      const auto& boneTransform = m_model->getBoneTransforms();
+      if(!boneTransform.empty()) memcpy(boneData.bones, boneTransform.data(), boneTransform.size() * sizeof(glm::mat4));
+    }
+    m_bonesUBO.update(boneData, m_curFrame);
     // MATRICES==================================================
     
     m_logDev.resetFences(*m_inFlightFences[m_curFrame]);
@@ -279,7 +273,7 @@ namespace V {
     
     createSwapchain(*m_wnd);
     createImgViews();
-    createGraphPipeline();
+    // createGraphPipeline();
     
     createDepthRes();
     
@@ -288,8 +282,8 @@ namespace V {
   }
   
   void VulkanRenderer::cleanupSC() {
-    m_pipeline.getPipeline().clear();
-    m_pipeline.getPipLayout().clear();
+    // m_pipeline.getPipeline().clear();
+    // m_pipeline.getPipLayout().clear();
     m_imgViews.clear();
     m_sc.getSC() = nullptr;
   }
@@ -301,48 +295,12 @@ namespace V {
     }
   }
   
-  bool VulkanRenderer::findSupFormat(
-    vk::Format& format,
-    const std::vector<vk::Format>& candidates,
-    vk::ImageTiling tiling,
-    vk::FormatFeatureFlags features
-  ) {
-    
-    for(const auto frmt : candidates) {
-      vk::FormatProperties props = m_physDev.getFormatProperties(frmt);
-      
-      if(tiling == vk::ImageTiling::eLinear && (props.linearTilingFeatures & features) == features) {
-        format = frmt;
-        return true;
-      }
-      if(tiling == vk::ImageTiling::eOptimal && (props.optimalTilingFeatures & features) == features) {
-        format = frmt;
-        return true;
-      }
-    }
-    
-    Logger::error("Failed to find supported format");
-    return false;
-  }
-  
-  bool VulkanRenderer::findDepthFormat(vk::Format& format) {
-    
-    if(!findSupFormat(
-          format,
-          { vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint },
-          vk::ImageTiling::eOptimal,
-          vk::FormatFeatureFlagBits::eDepthStencilAttachment
-        )
-    ) return false;
-    
-    return true;
-  }
-  
   //====================================================================================================
   
   bool VulkanRenderer::init(Window& wnd) {
     
     m_wnd = &wnd;
+    m_lastFrameTime = std::chrono::high_resolution_clock::now();
     
     if(    !createInstance()
         || !setupDM()
@@ -351,18 +309,15 @@ namespace V {
         || !createLogDev()
         || !createSwapchain(wnd)
         || !createImgViews()
-        || !createDescSetLayout()
-        || !createGraphPipeline()
+        || !createDescSetLayouts()
         || !createCmdPool()
         
         || !createUBO()
-        || !createMesh()
         
         || !createDepthRes()
         
-        || !createTexture()
-        
         || !createDescPool()
+        || !createModel()
         || !createDescSets()
         || !createCmdBufs()
         || !createSyncObjs()
@@ -662,23 +617,15 @@ namespace V {
     return true;
   }
   
-  bool VulkanRenderer::createDescSetLayout() {
-    
-    std::array<vk::DescriptorSetLayoutBinding, 3> bindings = {
+  bool VulkanRenderer::createDescSetLayouts() {
+    // set=0
+    std::array<vk::DescriptorSetLayoutBinding, 3> perFrameBindings = {
       // binding 0: camera ubo
       vk::DescriptorSetLayoutBinding{
         .binding = 0,
         .descriptorType = vk::DescriptorType::eUniformBuffer,
         .descriptorCount = 1,
         .stageFlags = vk::ShaderStageFlagBits::eVertex,
-        .pImmutableSamplers = nullptr
-      },
-      // binding 1: texture sampler
-      vk::DescriptorSetLayoutBinding{
-        .binding = 1,
-        .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-        .descriptorCount = 1,
-        .stageFlags = vk::ShaderStageFlagBits::eFragment,
         .pImmutableSamplers = nullptr
       },
       // binding 2: object ubo
@@ -688,38 +635,54 @@ namespace V {
         .descriptorCount = 1,
         .stageFlags = vk::ShaderStageFlagBits::eVertex,
         .pImmutableSamplers = nullptr
+      },
+      // binding 3: bones ubo
+      vk::DescriptorSetLayoutBinding{
+        .binding = 3,
+        .descriptorType = vk::DescriptorType::eUniformBuffer,
+        .descriptorCount = 1,
+        .stageFlags = vk::ShaderStageFlagBits::eVertex,
+        .pImmutableSamplers = nullptr
       }
     };
     
-    vk::DescriptorSetLayoutCreateInfo layoutInfo{
+    vk::DescriptorSetLayoutCreateInfo perFrameLayoutInfo{
       .flags = {},
-      .bindingCount = bindings.size(),
-      .pBindings = bindings.data()
+      .bindingCount = perFrameBindings.size(),
+      .pBindings = perFrameBindings.data()
     };
     
     {
-      auto res = m_logDev.createDescriptorSetLayout(layoutInfo);
+      auto res = m_logDev.createDescriptorSetLayout(perFrameLayoutInfo);
       if(!res) {
         Logger::error("Failed to create descriptor set layout: {}", vk::to_string(res.error()));
         return false;
       }
-      m_descSetLayout = std::move(res.value());
+      m_perFrameDescSetLayout = std::move(res.value());
     }
     
-    return true;
-  }
-  
-  bool VulkanRenderer::createGraphPipeline() {
-    
-    vk::Format depthFormat;
-    if(!findDepthFormat(depthFormat)) return false;
-    
-    VulkanPplConfig opaqueConfig{
-      .shaderPath = "../../assets/shaders/shader.spv"
+    // set=1
+    // binding 0: texture sampler
+    vk::DescriptorSetLayoutBinding textureBinding{
+      .binding = 0,
+      .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+      .descriptorCount = 1,
+      .stageFlags = vk::ShaderStageFlagBits::eFragment,
+      .pImmutableSamplers = nullptr
     };
     
-    if(!m_pipeline.init(m_logDev, m_sc, m_descSetLayout, depthFormat, opaqueConfig)) {
-      return false;
+    vk::DescriptorSetLayoutCreateInfo materialLayoutInfo {
+      .bindingCount = 1,
+      .pBindings = &textureBinding
+    };
+    
+    {
+      auto res = m_logDev.createDescriptorSetLayout(materialLayoutInfo);
+      if(!res) {
+        Logger::error("Failed to create descriptor set layout: {}", vk::to_string(res.error()));
+        return false;
+      }
+      m_perMatDescSetLayout = std::move(res.value());
     }
     
     return true;
@@ -754,32 +717,8 @@ namespace V {
       Logger::error("Failed to init camera ubo");
       return false;
     }
-    
-    return true;
-  }
-  
-  bool VulkanRenderer::createMesh() {
-    
-    if(!m_mesh.init(vertices, indices, m_physDev, m_logDev, m_cmdPool, m_graphQ)) {
-      Logger::error("Failed to init mesh");
-      return false;
-    }
-    
-    return true;
-  }
-  
-  bool VulkanRenderer::createTexture() {
-    
-    std::string_view path("../../assets/textures/txtr.jpg");
-    
-    if(!m_texture.init(
-      path,
-      m_physDev,
-      m_logDev,
-      m_cmdPool,
-      m_graphQ
-    )) {
-      Logger::error("Failed to init texture");
+    if(!m_bonesUBO.init(m_physDev, m_logDev)) {
+      Logger::error("Failed to init camera ubo");
       return false;
     }
     
@@ -789,7 +728,7 @@ namespace V {
   bool VulkanRenderer::createDepthRes() {
     
     vk::Format depthFormat;
-    if(!findDepthFormat(depthFormat)) return false;
+    if(!findDepthFormat(depthFormat, m_physDev)) return false;
     
     if(!createImage(
           m_sc.getExtent().width,
@@ -814,17 +753,17 @@ namespace V {
     std::array<vk::DescriptorPoolSize, 2> poolSize = {
       vk::DescriptorPoolSize{
         .type = vk::DescriptorType::eUniformBuffer,
-        .descriptorCount = 2 * MAX_FRAMES_IN_FLIGHT // now two ubos per frame
+        .descriptorCount = 3 * MAX_FRAMES_IN_FLIGHT // now three ubos per frame
       },
       vk::DescriptorPoolSize{
         .type = vk::DescriptorType::eCombinedImageSampler,
-        .descriptorCount = MAX_FRAMES_IN_FLIGHT
+        .descriptorCount = 100
       }
     };
     
     vk::DescriptorPoolCreateInfo poolInfo{
       .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-      .maxSets = MAX_FRAMES_IN_FLIGHT,
+      .maxSets = 100 + MAX_FRAMES_IN_FLIGHT,
       .poolSizeCount = poolSize.size(),
       .pPoolSizes = poolSize.data()
     };
@@ -841,23 +780,45 @@ namespace V {
     return true;
   }
   
+  bool VulkanRenderer::createModel() {
+    
+    m_model = std::make_unique<VulkanModel>(
+      false,
+      m_physDev,
+      m_logDev,
+      m_sc,
+      m_cmdPool,
+      m_graphQ,
+      m_perFrameDescSetLayout,
+      m_perMatDescSetLayout,
+      m_descPool
+    );
+    
+    if(!m_model->load("../../assets/models/chest/source/MESH_Chest.fbx")) {
+      Logger::error("Failed to load model");
+      return false;
+    }
+    
+    return true;
+  }
+  
   bool VulkanRenderer::createDescSets() {
     
-    std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, *(m_descSetLayout));
+    std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, *(m_perFrameDescSetLayout));
     vk::DescriptorSetAllocateInfo allocInfo{
       .descriptorPool = m_descPool,
       .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
       .pSetLayouts = layouts.data()
     };
     
-    m_descSets.clear();
+    m_perFrameDescSets.clear();
     {
       auto res = m_logDev.allocateDescriptorSets(allocInfo);
       if(!res) {
         Logger::error("Failed to allocate descriptor sets: {}", vk::to_string(res.error()));
         return false;
       }
-      m_descSets = std::move(res.value());
+      m_perFrameDescSets = std::move(res.value());
     }
 
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
@@ -871,16 +832,16 @@ namespace V {
         .offset = 0,
         .range = sizeof(ObjectData)
       };
-      
-      vk::DescriptorImageInfo imgInfo{ // binding 1 (texture)
-        .sampler = m_texture.getSampler(),
-        .imageView = m_texture.getImgView(),
-        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+      vk::DescriptorBufferInfo bonesBufInfo{ // binding 3
+        .buffer = m_bonesUBO.getUBufs()[i],
+        .offset = 0,
+        .range = sizeof(BoneData)
       };
+      
       
       std::array<vk::WriteDescriptorSet, 3> descWrites = {
         vk::WriteDescriptorSet {
-          .dstSet = m_descSets[i],
+          .dstSet = m_perFrameDescSets[i],
           .dstBinding = 0, // binding 0
           .dstArrayElement = 0,
           .descriptorCount = 1,
@@ -889,22 +850,22 @@ namespace V {
           .pBufferInfo = &cameraBufInfo
         },
         vk::WriteDescriptorSet {
-          .dstSet = m_descSets[i],
-          .dstBinding = 1, // binding 1
-          .dstArrayElement = 0,
-          .descriptorCount = 1,
-          .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-          .pImageInfo = &imgInfo,
-          .pBufferInfo = nullptr
-        },
-        vk::WriteDescriptorSet {
-          .dstSet = m_descSets[i],
+          .dstSet = m_perFrameDescSets[i],
           .dstBinding = 2, // binding 2
           .dstArrayElement = 0,
           .descriptorCount = 1,
           .descriptorType = vk::DescriptorType::eUniformBuffer,
           .pImageInfo = nullptr,
           .pBufferInfo = &objectBufInfo
+        },
+        vk::WriteDescriptorSet {
+          .dstSet = m_perFrameDescSets[i],
+          .dstBinding = 3, // binding 3
+          .dstArrayElement = 0,
+          .descriptorCount = 1,
+          .descriptorType = vk::DescriptorType::eUniformBuffer,
+          .pImageInfo = nullptr,
+          .pBufferInfo = &bonesBufInfo
         }
       };
       
