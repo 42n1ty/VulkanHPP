@@ -1,4 +1,4 @@
-/bin/*/*.pdb
+bin/Debug/*.pdb
 /build/
 /release/
 *.zip
