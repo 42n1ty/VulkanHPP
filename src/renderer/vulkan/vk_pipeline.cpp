@@ -48,13 +48,19 @@ namespace V {
     return shaderModule;
   }
   
-  bool VulkanPipeline::init(const vk::raii::Device& logDev, VulkanSwapchain& sc, vk::raii::DescriptorSetLayout& descSetLayout, vk::Format format) {
+  bool VulkanPipeline::init(
+    const vk::raii::Device& logDev,
+    VulkanSwapchain& sc,
+    vk::raii::DescriptorSetLayout& descSetLayout,
+    vk::Format format,
+    const VulkanPplConfig& config
+  ) {
     
     std::vector<char> shaderCode;
     vk::raii::ShaderModule shaderModule{nullptr};
     
     {
-      auto res = readFile("../../assets/shaders/shader.spv");
+      auto res = readFile(config.shaderPath);
       if(!res) {
         return false;
       }
@@ -93,7 +99,7 @@ namespace V {
     };
     
     vk::PipelineInputAssemblyStateCreateInfo inputAssembly{
-      .topology = vk::PrimitiveTopology::eTriangleList,
+      .topology = config.topology,
       .primitiveRestartEnable = vk::False
     };
     
@@ -115,9 +121,9 @@ namespace V {
     vk::PipelineRasterizationStateCreateInfo rasterizer{
       .depthClampEnable = vk::False,
       .rasterizerDiscardEnable = vk::False,
-      .polygonMode = vk::PolygonMode::eFill,
-      .cullMode = vk::CullModeFlagBits::eBack,
-      .frontFace = vk::FrontFace::eCounterClockwise,
+      .polygonMode = config.polygonMode,
+      .cullMode = config.cullMode,
+      .frontFace = config.frontface,
       .depthBiasEnable = vk::False,
       .depthBiasSlopeFactor = 1.f,
       .lineWidth = 1.f
@@ -129,23 +135,28 @@ namespace V {
     };
     
     vk::PipelineDepthStencilStateCreateInfo depthStencil{
-      .depthTestEnable = vk::True,
-      .depthWriteEnable = vk::True,
-      .depthCompareOp = vk::CompareOp::eLess,
+      .depthTestEnable = config.depthTestEnable,
+      .depthWriteEnable = config.depthWriteEnable,
+      .depthCompareOp = config.depthCompOp,
       .depthBoundsTestEnable = vk::False,
       .stencilTestEnable = vk::False
     };
     
     vk::PipelineColorBlendAttachmentState clrBlendAttachment{
-      .blendEnable = vk::False,
-      .srcColorBlendFactor = vk::BlendFactor::eSrcAlpha,
-      .dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
-      .colorBlendOp = vk::BlendOp::eAdd,
-      .srcAlphaBlendFactor = vk::BlendFactor::eOne,
-      .dstAlphaBlendFactor = vk::BlendFactor::eZero,
-      .alphaBlendOp = vk::BlendOp::eAdd,
       .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
     };
+    
+    if(config.alphaBlend) {
+      clrBlendAttachment.blendEnable = vk::True;
+      clrBlendAttachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
+      clrBlendAttachment.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
+      clrBlendAttachment.colorBlendOp = vk::BlendOp::eAdd;
+      clrBlendAttachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;
+      clrBlendAttachment.dstAlphaBlendFactor = vk::BlendFactor::eZero;
+      clrBlendAttachment.alphaBlendOp = vk::BlendOp::eAdd;
+    } else {
+      clrBlendAttachment.blendEnable = vk::False;
+    }
     
     vk::PipelineColorBlendStateCreateInfo clrBlending{
       .logicOpEnable = vk::False,

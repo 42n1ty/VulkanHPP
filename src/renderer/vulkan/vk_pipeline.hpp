@@ -4,6 +4,24 @@
 
 namespace V {
   
+  struct VulkanPplConfig {
+    
+    std::string_view shaderPath;
+    
+    vk::PrimitiveTopology topology = vk::PrimitiveTopology::eTriangleList;
+    
+    vk::PolygonMode polygonMode = vk::PolygonMode::eFill;
+    vk::CullModeFlags cullMode = vk::CullModeFlagBits::eBack;
+    vk::FrontFace frontface = vk::FrontFace::eCounterClockwise;
+    
+    bool alphaBlend = false;
+    
+    bool depthTestEnable = true;
+    bool depthWriteEnable = true;
+    vk::CompareOp depthCompOp = vk::CompareOp::eLess;
+    
+  };
+  
   class VulkanSwapchain;
   
   class VulkanPipeline {
@@ -12,7 +30,7 @@ namespace V {
     VulkanPipeline();
     ~VulkanPipeline();
     
-    bool init(const vk::raii::Device&, VulkanSwapchain&, vk::raii::DescriptorSetLayout&, vk::Format);
+    bool init(const vk::raii::Device&, VulkanSwapchain&, vk::raii::DescriptorSetLayout&, vk::Format, const VulkanPplConfig&);
     
     vk::raii::Pipeline& getPipeline() { return m_pipeline; }
     vk::raii::PipelineLayout& getPipLayout() { return m_pipelineLayout; }

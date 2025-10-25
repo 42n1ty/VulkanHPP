@@ -714,7 +714,11 @@ namespace V {
     vk::Format depthFormat;
     if(!findDepthFormat(depthFormat)) return false;
     
-    if(!m_pipeline.init(m_logDev, m_sc, m_descSetLayout, depthFormat)) {
+    VulkanPplConfig opaqueConfig{
+      .shaderPath = "../../assets/shaders/shader.spv"
+    };
+    
+    if(!m_pipeline.init(m_logDev, m_sc, m_descSetLayout, depthFormat, opaqueConfig)) {
       return false;
     }
     
