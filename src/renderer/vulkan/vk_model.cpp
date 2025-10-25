@@ -150,7 +150,7 @@ namespace V {
     if (mesh->mMaterialIndex >= 0) {
       aiMaterial* assimpMaterial = scene->mMaterials[mesh->mMaterialIndex];
 
-      // TODO: materials cash
+      // TODO: materials cache
 
       auto texture = loadTexture(assimpMaterial, aiTextureType_DIFFUSE);
       if (!texture) {
