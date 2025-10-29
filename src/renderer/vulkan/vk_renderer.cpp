@@ -204,7 +204,10 @@ namespace V {
     m_objectUBO.update(objData, m_curFrame);
     
     CameraData camData{};
-    camData.view = glm::lookAt(glm::vec3(0.f, 2.f, 5.f), glm::vec3(0.f, 0.f, 0.f), glm::vec3(0.f, 1.f, 0.f));
+    glm::vec3 eyePos = glm::vec3(0.f, 2.f, 5.f);
+    glm::vec3 center = glm::vec3(0.f, 0.f, 0.f);
+    glm::vec3 upV = glm::vec3(0.f, 1.f, 0.f);
+    camData.view = glm::lookAt(eyePos, center, upV);
     camData.proj = glm::perspective(glm::radians(45.f), static_cast<float>(m_sc.getExtent().width) / static_cast<float>(m_sc.getExtent().height), 0.1f, 10.f);
     camData.proj[1][1] *= -1; // reverse
     m_cameraUBO.update(camData, m_curFrame);
